@@ -54,7 +54,7 @@ L7  Telemetry · internal use · rollback ── regressions feed the eval set �
 **Trade-offs:**
 - **Advisory by design.** Anyone can skip it (opening the PR outside Claude Code, writing the marker by hand). CI never trusts a local marker — L3+ always run.
 - **Reduces CI rounds per PR, not CI runs.** The cost moves to the developer's seat on a cheaper model; it doesn't disappear.
-- **Pushes allowed, PR creation gated.** Developers push WIP for backup and sharing; gating every push is friction that gets hooks deleted. Git has no "PR created" hook, so the local gate only covers Claude Code users. CI never reads the local marker; it runs its own review (L5, not built yet).
+- **Pushes allowed, PR creation gated.** Developers push WIP for backup and sharing; gating every push is friction that gets hooks deleted. Git has no "PR created" hook, so the local gate only covers Claude Code users. CI never reads the local marker; it runs its own review (L5).
 - **Review is tied to an exact SHA.** Correct, but every fix re-triggers a full review — see *Review rounds*.
 - **Fails open** if the hook itself errors: it runs on every Bash call; failing closed would block all of them.
 
@@ -96,7 +96,9 @@ L7  Telemetry · internal use · rollback ── regressions feed the eval set �
 
 ---
 
-## L4 — Risk: floors → classifier → verifier ⬜
+## L4 — Risk: floors → classifier → verifier ✅
+
+**Built:** `review/risk.py` (floors from the `## Risk floors` block in `REVIEW.md`, classifier `claude-haiku-5-5`, verifier `claude-sonnet-5-5`), run by `.github/workflows/ai-review.yml`. Sets a `risk:*` label. Any agent failure fails closed to high. Diffs over 150k chars get a medium floor instead of a partial rating.
 
 Decides **review depth** (L5) and **how many humans** (L6). The asymmetry drives the design: a wrong "low" ships unreviewed risky code; a wrong "high" wastes a human's time.
 
@@ -133,7 +135,15 @@ Expensive code gets **more people and more checks**: higher floor, deeper review
 
 ---
 
-## L5 — AI code review ⬜ (L1's diff-reviewer is the prototype)
+## L5 — AI code review ✅
+
+**Built:** `review/reviewer.py` via `python -m review` in `ai-review.yml`. Depth by risk: Quick `claude-haiku-5-5`, Standard `claude-sonnet-5-5`, Deep `claude-opus-5-5`. Findings are schema-validated, then **evidence-verified in code** (the quoted code must appear within 3 lines of the cited line; others are reported as unverified, never inline). The summary count is computed by the code, not the model. Posted as a `COMMENT` review — never an approval.
+
+**Sandbox** (`review/agent.py`): a `PreToolUse` hook allowlists Read/Grep/Glob **inside the PR checkout only** (symlinks resolved), Bash/Write/Edit/Web/Agent are removed, `dontAsk` denies anything else, `setting_sources=[]` loads no config from the PR, `GH_TOKEN` is removed from the environment while agents run, and the payload is scanned for credential-shaped strings before posting.
+
+**Auth:** `CLAUDE_CODE_OAUTH_TOKEN` (a personal subscription token) in the `ai-review` environment — fine for this personal learning repo. A shared or production setup would use **workload identity federation** (no stored secret; the identity is the repo's workflow, scoped to one workspace with a budget cap).
+
+**Bootstrap limit:** `pull_request_target` runs the workflow from `main`, so the PR that introduces or changes the reviewer is reviewed by the previous version (or not at all) — which is why `review/**` and `.github/**` are high-risk floors.
 
 **Inputs:** the diff, the linked issue (acceptance criteria), `CLAUDE.md`, `REVIEW.md`, and the files the diff touches.
 
@@ -160,7 +170,9 @@ A Quick review that finds something serious **escalates** to Deep and raises the
 
 ---
 
-## L6 — Human approval ⬜
+## L6 — Human approval ✅
+
+**Built:** `review/approvals.py` via `.github/workflows/approvals.yml`. Low 0 / medium 1 / high 2 (`needs-human` → at least 1); only non-bot, non-author approvals of the current head commit count; an unrated PR is blocked; a maintainer's `break-glass` passes with a logged warning. **Known gap:** `pull_request_review` runs the workflow file from the PR branch — protect `.github/` with a ruleset before relying on it.
 
 **Count by risk:** low = 0, medium = 1, high = 2. GitHub has one approvals number per branch, so a **custom required check** reads the risk (set only by the bot, recomputed on every push) and counts approvals.
 
@@ -190,7 +202,7 @@ Not applicable to orders-service yet (no deploy target); designed for when there
 
 ---
 
-## Trust boundaries ⬜
+## Trust boundaries ✅
 
 **The code under review must never control its own review.**
 
@@ -207,7 +219,9 @@ Not applicable to orders-service yet (no deploy target); designed for when there
 
 ---
 
-## Review rounds ⬜
+## Review rounds ✅
+
+**Built:** `review/rounds.py`. State is a hidden marker in the bot's own review (markers from anyone else are ignored). Same SHA → stored verdict reused; ancestor → incremental; rebase → full; 3 rounds → `needs-human`. **Not built:** the full pass before merge.
 
 - Store the **last reviewed SHA** per PR; after the first round, review only `last_reviewed..HEAD`.
 - The incremental pass still reads touched files in full (new code can break old code).
@@ -222,7 +236,7 @@ Not applicable to orders-service yet (no deploy target); designed for when there
 
 - **Eval set from reality:** every revert or incident points to a PR the pipeline missed → replay its diff, expect a finding. Plus classifier/verifier disagreements (human-labeled).
 - **Prompts, `REVIEW.md`, tool lists and model IDs are code.** A PR changing any of them must pass the eval before merge.
-- **Pin model IDs, never aliases.** An alias (e.g. `model: haiku` in `.claude/agents/diff-reviewer.md` today) silently moves to a new version — the reviewer changes and nobody rescores.
+- **Pin model IDs, never aliases.** An alias (e.g. `model: haiku`, which `.claude/agents/diff-reviewer.md` used before it was pinned) silently moves to a new version — the reviewer changes and nobody rescores.
 - **Same issue, two verdicts:** a token-exposure finding got "non-blocking" on one run and "blocking" on the next; the only change between them was documenting the gap. LLM verdicts are non-deterministic and documenting a risk can make it *more* salient. Hence: one stored verdict per SHA, a human override path for blocking checks, and a `REVIEW.md` rule for how documented trade-offs are graded.
 - **Metrics:** recall on known misses; precision from the human dismiss rate; format adherence (count-first summary, `file:line` on every finding — Haiku once printed "5 findings" over a list of 6).
 
