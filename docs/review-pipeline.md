@@ -52,10 +52,9 @@ L7  Telemetry · internal use · rollback ── regressions feed the eval set �
 **Why:** shrink the loop, not enforce. A finding caught locally is fixed in seconds by someone who still has the context; the same finding in CI becomes a public comment, another push, another review run, another notification.
 
 **Trade-offs:**
-- **Advisory by design.** Anyone can skip it (`--no-verify`, no Claude Code, writing the marker by hand). CI never trusts a local marker — L3+ always run.
+- **Advisory by design.** Anyone can skip it (opening the PR outside Claude Code, writing the marker by hand). CI never trusts a local marker — L3+ always run.
 - **Reduces CI rounds per PR, not CI runs.** The cost moves to the developer's seat on a cheaper model; it doesn't disappear.
-- **Today both push and `gh pr create` are gated.** Decided, not yet built: allow pushes, gate only PR creation. Developers push WIP for backup and sharing; gating every push is friction that gets hooks deleted. Git has no "PR created" hook, so the local gate only covers Claude Code users — enforcement lives in CI.
-  - ⬜ To change: gate only `gh pr create` in the Claude hook; drop `.githooks/pre-push`.
+- **Pushes allowed, PR creation gated.** Developers push WIP for backup and sharing; gating every push is friction that gets hooks deleted. Git has no "PR created" hook, so the local gate only covers Claude Code users. CI never reads the local marker; it runs its own review (L5, not built yet).
 - **Review is tied to an exact SHA.** Correct, but every fix re-triggers a full review — see *Review rounds*.
 - **Fails open** if the hook itself errors: it runs on every Bash call; failing closed would block all of them.
 
@@ -78,7 +77,7 @@ L7  Telemetry · internal use · rollback ── regressions feed the eval set �
 | Case | Handling |
 |---|---|
 | Dependabot / Renovate | exempt by bot author; scanners still run |
-| Incident hotfix | `break-glass` label applied by a maintainer (`.github/maintainers.txt`, read from `main`), logged as a warning naming who applied it, issue required after the fact |
+| Incident hotfix | `break-glass` label applied by a maintainer (`.github/maintainers.txt`, read from `main`), logged as a warning naming who applied it, an issue is expected after the fact (policy; the check only warns) |
 | Revert | link the original PR's issue, or break-glass |
 
 **Where the AI comes in:** not here. L5 checks that the diff actually satisfies the issue's acceptance criteria and flags scope creep.

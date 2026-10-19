@@ -5,7 +5,7 @@ description: Build, test, and AI-review the branch against main before pushing o
 
 # Pre-PR: build, test, review
 
-Layer 1 of review. Pushes and `gh pr create` are gated on this passing for the current HEAD.
+Layer 1 of review. Opening a PR (`gh pr create`) is gated on this passing for the current HEAD; pushes are not.
 
 1. **Scope.** `git fetch -q origin main`. If `git diff --quiet origin/main...HEAD`, say "nothing to review" and stop. Uncommitted changes are not reviewed — if `git status --porcelain` is non-empty, tell the user and stop.
 2. **Checks.** Run in order; stop at the first failure and report its output tail:

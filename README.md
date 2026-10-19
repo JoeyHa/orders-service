@@ -22,13 +22,7 @@ ruff check . && ruff format --check .
 
 ## Before opening a PR
 
-Run `/pre-pr` in Claude Code: lint, tests, Docker build, then a review of your branch against `main` by the `diff-reviewer` agent (Haiku). `git push` and `gh pr create` are blocked until it passes for your current commit.
-
-One-time setup so plain `git push` is gated too:
-
-```bash
-git config core.hooksPath .githooks
-```
+Run `/pre-pr` in Claude Code: lint, tests, Docker build, then a review of your branch against `main` by the `diff-reviewer` agent (Haiku). Claude Code blocks `gh pr create` until it passes for your current commit. Pushes are not gated.
 
 ## API
 

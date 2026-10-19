@@ -4,13 +4,13 @@ Small orders API: users, orders with a `pending → paid | cancelled` lifecycle,
 
 ## Stack
 
-Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16 · pytest + httpx · ruff · Docker · GitHub Actions (CI: lint/test/build, CD: image to GHCR).
+Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16 · pytest + httpx · ruff · Docker · GitHub Actions (CI: lint/test/build, issue-link PR gate, CD: image to GHCR).
 
 ## Layout
 
 - `app/api/` routers (`users.py`, `orders.py`) · `app/models.py` ORM · `app/db.py` engine + `SessionDep` · `app/auth.py` `require_api_key` · `app/config.py` env settings
 - `migrations/versions/` Alembic · `tests/` real-Postgres tests
-- `scripts/` + `.githooks/` pre-push gate and issue-link check · `.claude/` skills, `diff-reviewer` agent, hook settings
+- `scripts/` PR gate and issue-link check · `.claude/` skills, `diff-reviewer` agent, hook settings
 
 ## Conventions
 
@@ -25,7 +25,7 @@ Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16
 9. Tests hit real Postgres; no DB mocks. Every new endpoint behavior gets a test.
 10. FastAPI dependencies use `Annotated[...]`. `ruff check` and `ruff format --check` stay clean.
 
-Before pushing or opening a PR, run `/pre-pr` (lint, tests, build, diff review). Claude Code blocks push and `gh pr create` until it passes; plain `git push` is blocked too once `git config core.hooksPath .githooks` is set.
+Before opening a PR, run `/pre-pr` (lint, tests, build, diff review). Claude Code blocks `gh pr create` until it passes for HEAD; pushes are not gated.
 
 If a PR changes something this file states (stack, layout, a convention, commands), update this file in the same PR.
 
