@@ -4,13 +4,13 @@ Small orders API: users, orders with a `pending → paid | cancelled` lifecycle,
 
 ## Stack
 
-Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16 · pytest + httpx · ruff · Docker · GitHub Actions (CI: lint/test/build, issue-link PR gate, CD: image to GHCR).
+Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16 · pytest + httpx · ruff · Docker · GitHub Actions (CI: lint/test/build, issue-link, AI review, approvals; CD: image to GHCR).
 
 ## Layout
 
 - `app/api/` routers (`users.py`, `orders.py`) · `app/models.py` ORM · `app/db.py` engine + `SessionDep` · `app/auth.py` `require_api_key` · `app/config.py` env settings
 - `migrations/versions/` Alembic · `tests/` real-Postgres tests
-- `scripts/` PR gate and issue-link check · `.claude/` skills, `diff-reviewer` agent, hook settings
+- `review/` CI review layers (risk, AI review, approvals) · `scripts/` PR gate and issue-link check · `.claude/` skills, `diff-reviewer` agent, hook settings
 
 ## Conventions
 
