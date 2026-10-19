@@ -6,6 +6,8 @@ How a change to orders-service gets from a laptop to `main`, and which layer cat
 
 **Status:** ✅ built · 🟡 interim · ⬜ designed, not built.
 
+Visual version with diagrams: [`review-pipeline.html`](review-pipeline.html) (open locally in a browser).
+
 ---
 
 ## Overview

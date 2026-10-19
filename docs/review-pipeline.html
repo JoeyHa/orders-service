@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review Pipeline</title>
+<meta name="description" content="How a change to orders-service gets from a laptop to main: eight review layers, what each catches, and why.">
+<style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --surface-2: #f0efeb; --text: #1d1d1b; --muted: #5f5e58;
+  --border: #dcdad3; --accent: #3b5bdb; --accent-soft: #e7ecff;
+  --det: #2f7d4f; --det-soft: #e3f3e9;      /* deterministic */
+  --llm: #7b4bc4; --llm-soft: #efe7fb;      /* LLM */
+  --human: #b25e09; --human-soft: #fbeedd;  /* human */
+  --danger: #c0392b; --danger-soft: #fbe5e2;
+  --built: #2f7d4f; --interim: #b28704; --planned: #8a8a85;
+  --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151514; --surface: #1e1e1c; --surface-2: #262624; --text: #ecebe6; --muted: #a3a29b;
+    --border: #3a3936; --accent: #8ea4ff; --accent-soft: #232a45;
+    --det: #6cc592; --det-soft: #1c2e24; --llm: #b896f0; --llm-soft: #2a2238;
+    --human: #f0a85a; --human-soft: #33261a; --danger: #f08072; --danger-soft: #3a2220;
+    --built: #6cc592; --interim: #e3c04f; --planned: #8f8e88; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151514; --surface: #1e1e1c; --surface-2: #262624; --text: #ecebe6; --muted: #a3a29b;
+  --border: #3a3936; --accent: #8ea4ff; --accent-soft: #232a45;
+  --det: #6cc592; --det-soft: #1c2e24; --llm: #b896f0; --llm-soft: #2a2238;
+  --human: #f0a85a; --human-soft: #33261a; --danger: #f08072; --danger-soft: #3a2220;
+  --built: #6cc592; --interim: #e3c04f; --planned: #8f8e88; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; letter-spacing: -.01em; }
+h2 { font-size: 1.35rem; margin: 56px 0 6px; padding-top: 8px; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p { margin: 8px 0; }
+.lede { color: var(--muted); font-size: 1.05rem; max-width: 70ch; }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
+.section-sub { color: var(--muted); margin: 0 0 18px; max-width: 72ch; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 0; }
+nav.toc a { text-decoration: none; font-size: .85rem; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); background: var(--surface); }
+nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
+
+/* principle callout */
+.principle { margin: 24px 0 0; padding: 14px 16px; background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 6px; }
+
+/* legend */
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 18px 0 0; font-size: .85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1.5px solid; }
+.sw.det { background: var(--det-soft); border-color: var(--det); }
+.sw.llm { background: var(--llm-soft); border-color: var(--llm); }
+.sw.human { background: var(--human-soft); border-color: var(--human); }
+
+/* flow diagrams */
+.diagram { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 16px; box-shadow: var(--shadow); overflow: hidden; }
+.diagram-caption { font-size: .85rem; color: var(--muted); margin: 8px 2px 0; }
+.flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.node {
+  width: 100%; max-width: 560px; padding: 10px 14px; border-radius: 8px; border: 1.5px solid var(--border);
+  background: var(--surface-2); text-align: left; position: relative;
+}
+.node .t { font-weight: 650; }
+.node .d { font-size: .86rem; color: var(--muted); }
+.node.det { background: var(--det-soft); border-color: var(--det); }
+.node.llm { background: var(--llm-soft); border-color: var(--llm); }
+.node.human { background: var(--human-soft); border-color: var(--human); }
+.node.plain { background: var(--surface); }
+.node .tag { position: absolute; top: 8px; right: 10px; font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.arrow { width: 2px; height: 22px; background: var(--muted); position: relative; margin: 2px 0 8px; }
+.arrow::after { content: ""; position: absolute; left: -5px; bottom: -7px; border: 6px solid transparent; border-top: 7px solid var(--muted); }
+.arrow-label { font-size: .75rem; color: var(--muted); margin: -4px 0 4px; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 560px; }
+.split .node { max-width: none; }
+.loop { margin-top: 10px; width: 100%; max-width: 560px; padding: 8px 12px; border: 1.5px dashed var(--accent); border-radius: 8px; font-size: .86rem; color: var(--accent); text-align: center; }
+
+/* status pills */
+.st { font-size: .7rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.st.built { color: var(--built); border: 1px solid var(--built); }
+.st.interim { color: var(--interim); border: 1px solid var(--interim); }
+.st.planned { color: var(--planned); border: 1px solid var(--planned); }
+
+/* decision diagram (L4) */
+.decide { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px 12px; align-items: center; max-width: 760px; margin: 0 auto; }
+.decide .node { max-width: none; }
+.decide .yes { font-size: .78rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.decide .outcome { border-style: dashed; }
+/* every item gets an explicit column so auto-placement can't reorder the path */
+.decide > .node { grid-column: 1; }
+.decide > .yes { grid-column: 2; }
+.decide > .node.outcome { grid-column: 3; }
+.decide .col1 { grid-column: 1; display: flex; flex-direction: column; align-items: center; }
+.decide .col1 .arrow { margin: 2px auto 8px; }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--surface-2); font-weight: 650; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+
+/* trust boundary */
+.trust { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.zone { border-radius: var(--radius); padding: 14px; border: 2px solid; }
+.zone h4 { margin: 0 0 4px; font-size: 1rem; }
+.zone .trig { font-size: .82rem; color: var(--muted); margin-bottom: 10px; }
+.zone ul { margin: 0; padding-left: 18px; font-size: .9rem; }
+.zone li { margin: 4px 0; }
+.zone.untrusted { border-color: var(--danger); background: var(--danger-soft); }
+.zone.trusted { border-color: var(--det); background: var(--det-soft); }
+.wall { grid-column: 1 / -1; text-align: center; font-weight: 650; font-size: .9rem; padding: 10px; border-radius: 8px; background: var(--surface-2); border: 1px dashed var(--border); }
+
+/* rounds timeline */
+.rounds { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.round { border-radius: 8px; padding: 10px; border: 1.5px solid var(--border); background: var(--surface-2); font-size: .85rem; }
+.round b { display: block; font-size: .92rem; }
+.round.full { border-color: var(--llm); background: var(--llm-soft); }
+.round.inc { border-color: var(--accent); background: var(--accent-soft); }
+.round.cap { border-color: var(--human); background: var(--human-soft); }
+
+/* cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+.card .h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.card .h b { font-size: 1rem; }
+.card p { font-size: .9rem; margin: 6px 0 0; }
+.card .why { color: var(--muted); }
+
+/* lesson callouts */
+.lesson { margin: 14px 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--llm); font-size: .92rem; }
+.lesson b { color: var(--llm); }
+
+/* theme toggle */
+.toggle { position: fixed; top: 12px; right: 12px; font: inherit; font-size: .8rem; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .split, .trust { grid-template-columns: 1fr; }
+  .rounds { grid-template-columns: 1fr 1fr; }
+  .decide { grid-template-columns: 1fr; }
+  .decide .yes { justify-self: center; }
+  .decide .col1, .decide .node { grid-column: 1 !important; }
+  .node .tag { position: static; display: block; margin-bottom: 2px; }
+}
+</style>
+</head>
+<body>
+<button class="toggle" type="button" id="themeToggle" aria-label="Toggle light or dark theme">Theme</button>
+<div class="wrap">
+
+<header>
+  <h1>Review Pipeline</h1>
+  <p class="lede">How a change to <code>orders-service</code> gets from a laptop to <code>main</code>: eight layers, what each one catches, and why it is shaped the way it is. Visual companion to <a href="review-pipeline.md"><code>review-pipeline.md</code></a>, which stays the source of truth.</p>
+  <div class="principle"><b>Principle.</b> Every layer is cheaper and faster than the one after it, and removes what it can so the next one sees less. Deterministic checks run before any LLM. Anything a rule can decide, a rule decides.</div>
+  <div class="legend" aria-label="Legend">
+    <span><i class="sw det"></i>Deterministic (scripts, CI)</span>
+    <span><i class="sw llm"></i>LLM agent</span>
+    <span><i class="sw human"></i>Human</span>
+    <span><span class="st built">built</span></span>
+    <span><span class="st interim">interim</span></span>
+    <span><span class="st planned">designed</span></span>
+  </div>
+  <nav class="toc" aria-label="Contents">
+    <a href="#overview">Overview</a><a href="#layers">Layers</a><a href="#risk">Risk (L4)</a>
+    <a href="#trust">Trust boundaries</a><a href="#security">Security (L6)</a><a href="#rounds">Review rounds</a>
+    <a href="#eval">Evaluation</a><a href="#lessons">Lessons</a><a href="#cheat">Cheat sheet</a>
+  </nav>
+</header>
+
+<!-- ================= OVERVIEW ================= -->
+<section id="overview">
+  <h2>The pipeline</h2>
+  <p class="section-sub">A change starts from an authorized issue and ends with telemetry watching it in production. Every regression found after merge flows back into the reviewer's eval set.</p>
+  <div class="diagram">
+    <div class="flow">
+      <div class="node human"><span class="tag">human</span><div class="t">Issue</div><div class="d">Authorized request with acceptance criteria</div></div>
+      <div class="arrow"></div>
+      <div class="node llm"><span class="tag">laptop · advisory</span><div class="t">L1 · Local <code>/pre-pr</code> <span class="st built">built</span></div><div class="d">lint · test · build · Haiku diff review → marker keyed to HEAD SHA</div></div>
+      <div class="arrow"></div>
+      <div class="node plain"><div class="t">PR opened as draft → marked ready for review</div><div class="d">Drafts are free; "ready" starts the expensive layers</div></div>
+      <div class="arrow"></div>
+      <div class="node det"><span class="tag">first · blocks</span><div class="t">L2 · Issue-link check <span class="st planned">designed</span></div><div class="d">Linked, open, authorized issue — or an audited exemption</div></div>
+      <div class="arrow"></div>
+      <div class="node det"><span class="tag">required</span><div class="t">L3 · CI: lint · test · build <span class="st built">built</span></div><div class="d">AI layers start only after these are green</div></div>
+      <div class="arrow"></div>
+      <div class="node llm"><div class="t">L4 · Risk: floors → classifier → verifier <span class="st planned">designed</span></div><div class="d">Blast radius decides review depth and human count</div></div>
+      <div class="arrow"></div>
+      <div class="split">
+        <div class="node llm"><div class="t">L5 · AI code review</div><div class="d">Quick / Standard / Deep by risk</div></div>
+        <div class="node llm"><div class="t">L6 · Security review</div><div class="d">Recall → precision → private disclosure</div></div>
+      </div>
+      <div class="arrow"></div>
+      <div class="node human"><span class="tag">never a bot</span><div class="t">L7 · Human approval <span class="st planned">designed</span></div><div class="d">0 / 1 / 2 approvers by risk · stale approvals dismissed</div></div>
+      <div class="arrow"></div>
+      <div class="node plain"><div class="t"><code>main</code></div></div>
+      <div class="arrow"></div>
+      <div class="node det"><div class="t">L8 · Telemetry · internal use · rollback <span class="st planned">designed</span></div><div class="d">Regressions surface fast after merge</div></div>
+      <div class="loop">↺ every regression, revert and classifier disagreement → eval set → reviewer rescored</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= LAYERS ================= -->
+<section id="layers">
+  <h2>Layer by layer</h2>
+  <p class="section-sub">What each layer does, and the reason it exists.</p>
+  <div class="cards">
+    <div class="card"><div class="h"><b>L1 · Local pre-PR</b><span class="st built">built</span></div>
+      <p><code>/pre-pr</code> skill: lint, tests, Docker build, then the <code>diff-reviewer</code> agent (Haiku, read-only). A Claude Code hook blocks <code>gh pr create</code> until a PASS exists for HEAD.</p>
+      <p class="why">Shrinks the loop, doesn't enforce. A local finding costs seconds; in CI it costs a public comment, a push, a rerun and a notification. CI never trusts the local marker.</p></div>
+    <div class="card"><div class="h"><b>L2 · Issue-link check</b><span class="st planned">designed</span></div>
+      <p>Script reads <code>closingIssuesReferences</code>. No linked, open, authorized issue → blocked. Bots, hotfixes and reverts use audited exemptions.</p>
+      <p class="why">SOC 2 change management: every change traces to an authorized request. A link proves traceability; authorization needs someone other than the author.</p></div>
+    <div class="card"><div class="h"><b>L3 · CI checks</b><span class="st built">built</span></div>
+      <p><code>lint</code>, <code>test</code> (Postgres, <code>alembic check</code>), <code>build</code>. Required by branch protection. Runs PR code, so it holds no secrets.</p>
+      <p class="why">Never spend tokens reviewing code that doesn't build. Cost: review latency now includes CI time.</p></div>
+    <div class="card"><div class="h"><b>L4 · Risk</b><span class="st planned">designed</span></div>
+      <p>Owner-defined floors from <code>REVIEW.md</code> (read from <code>main</code>), then a cheap classifier, then a blind adversarial verifier on anything still "low".</p>
+      <p class="why">A wrong "low" ships unreviewed risky code; a wrong "high" wastes time. Effort goes where the error is expensive.</p></div>
+    <div class="card"><div class="h"><b>L5 · AI code review</b><span class="st planned">designed</span></div>
+      <p>Diff + issue + <code>CLAUDE.md</code> + <code>REVIEW.md</code> + touched files. Findings ranked important / nit / pre-existing, each with <code>file:line</code>. Checks issue fit and <code>CLAUDE.md</code> drift.</p>
+      <p class="why">Pre-existing never blocks, nits are capped, documented decisions are not re-raised — repeated noise is why teams start ignoring reviewers.</p></div>
+    <div class="card"><div class="h"><b>L6 · Security</b><span class="st planned">designed</span></div>
+      <p>Context builder (incl. cached security map of <code>main</code> and scanner output) → candidates (recall) → validation (precision) → dedup → private disclosure.</p>
+      <p class="why">One prompt can't optimize recall and precision at once. Publishing an exploit on a public PR is disclosure.</p></div>
+    <div class="card"><div class="h"><b>L7 · Human approval</b><span class="st planned">designed</span></div>
+      <p>0 / 1 / 2 approvers by risk via a custom required check. Bots comment, never approve. Stale approvals dismissed; most recent push must be approved.</p>
+      <p class="why">Compliance may require a second person on every change — "low" may mean "approve", not "review deeply".</p></div>
+    <div class="card"><div class="h"><b>L8 · After merge</b><span class="st planned">designed</span></div>
+      <p>Telemetry, dogfooding, flags and canaries, one-click rollback.</p>
+      <p class="why">Fast detection lets reversible, observable changes take a lighter bar. Silent, irreversible changes can't lean on it.</p></div>
+  </div>
+</section>
+
+<!-- ================= RISK ================= -->
+<section id="risk">
+  <h2>L4 · How risk is decided</h2>
+  <p class="section-sub">Rules first, models after. The model can raise the level above the owner-defined floor, never lower it.</p>
+  <div class="diagram">
+    <div class="decide">
+      <div class="node det" style="grid-column:1"><div class="t">1 · Floors</div><div class="d">Path + content rules from <code>REVIEW.md</code> on <code>main</code>: <code>migrations/**</code>, <code>app/auth.py</code>, raw SQL, <code>.github/**</code>, policy files…</div></div>
+      <div class="col1"><div class="arrow"></div></div>
+      <div class="node plain" style="text-align:center"><div class="t">Floor ≥ medium?</div></div>
+      <div class="yes">yes →</div>
+      <div class="node human outcome"><div class="t">Skip models</div><div class="d">Humans are required anyway — save the tokens</div></div>
+      <div class="col1"><div class="arrow-label">no</div></div>
+      <div class="col1"><div class="arrow"></div></div>
+      <div class="node llm"><div class="t">2 · Classifier</div><div class="d">Cheap model · rates low / medium / high · can only raise</div></div>
+      <div class="yes">medium / high →</div>
+      <div class="node human outcome"><div class="t">Humans assigned</div><div class="d">Standard / Deep review</div></div>
+      <div class="col1"><div class="arrow-label">low</div></div>
+      <div class="col1"><div class="arrow"></div></div>
+      <div class="node llm"><div class="t">3 · Verifier</div><div class="d">Different, stronger model · <b>blind</b> to the first verdict · <b>adversarial</b>: "find every reason this needs a human"</div></div>
+      <div class="yes">raises →</div>
+      <div class="node human outcome"><div class="t">Its decision stands</div><div class="d">Must cite <code>file:line</code></div></div>
+      <div class="col1"><div class="arrow-label">still low</div></div>
+      <div class="col1"><div class="arrow"></div></div>
+      <div class="node det" style="grid-column:1"><div class="t">Verdict stored per commit SHA</div><div class="d">Stable across reruns · audit record: models, policy version, evidence · disagreements → eval set</div></div>
+    </div>
+  </div>
+
+  <h3>Blast radius sets the bar</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Factor</th><th>Raises the bar</th><th>Lowers it</th></tr></thead>
+    <tbody>
+      <tr><td>Reversibility</td><td>Migrations, data deletes, published APIs</td><td>Flag-guarded, one-click rollback</td></tr>
+      <tr><td>Data</td><td>Money (<code>amount_cents</code>), user data, auth</td><td>Logs, docs, tests</td></tr>
+      <tr><td>Dependents</td><td>Shared code with many callers, public endpoints</td><td>Leaf function, internal tool</td></tr>
+      <tr><td>Detection</td><td>Silent failure (wrong revenue numbers)</td><td>Fails loudly, caught by telemetry (L8)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Risk decides depth and people</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Risk</th><th>Review depth</th><th>Model</th><th>Context</th><th>Human approvers</th></tr></thead>
+    <tbody>
+      <tr><td>low</td><td>Quick</td><td>cheap</td><td>diff only</td><td>0 (or approve-only, for compliance)</td></tr>
+      <tr><td>medium</td><td>Standard</td><td>mid</td><td>diff + touched files</td><td>1</td></tr>
+      <tr><td>high</td><td>Deep</td><td>strongest</td><td>cross-file tracing + security deep pass</td><td>2</td></tr>
+    </tbody>
+  </table></div>
+  <p class="diagram-caption">A Quick review that finds something serious escalates to Deep and raises the PR's risk. Review can raise risk, never lower it.</p>
+</section>
+
+<!-- ================= TRUST ================= -->
+<section id="trust">
+  <h2>Trust boundaries</h2>
+  <p class="section-sub">The code under review must never control its own review.</p>
+  <div class="trust">
+    <div class="zone untrusted">
+      <h4>Runs PR code — no secrets</h4>
+      <div class="trig"><code>on: pull_request</code> · workflow file comes from the PR branch</div>
+      <ul><li>lint · test · build</li><li>Executes whatever the PR contains</li><li>Holds no tokens worth stealing</li></ul>
+    </div>
+    <div class="zone trusted">
+      <h4>Reviews PR code — never runs it</h4>
+      <div class="trig"><code>on: pull_request_target</code> · workflow file comes from <code>main</code></div>
+      <ul><li>Issue check · risk · AI review · security</li><li>Policy (<code>REVIEW.md</code>, <code>CLAUDE.md</code>, prompts) read from <code>main</code></li><li>Diff read as data · agents get read-only tools, no Bash, no network</li><li>Token in an Environment locked to <code>main</code></li></ul>
+    </div>
+    <div class="wall">Never check out and execute PR code in a job that holds secrets — that's the "pwn request".</div>
+  </div>
+  <div class="lesson"><b>Why an Environment, not a repo secret:</b> anyone who can push a branch can add a workflow that prints any repo secret. An Environment with "deployment branches: <code>main</code> only", used by a <code>pull_request_target</code> job, is out of reach of every branch.</div>
+</section>
+
+<!-- ================= SECURITY ================= -->
+<section id="security">
+  <h2>L6 · Security review flow</h2>
+  <p class="section-sub">Find broadly, then confirm strictly. Here the expensive error is dropping a real vulnerability.</p>
+  <div class="diagram">
+    <div class="flow">
+      <div class="node det"><div class="t">0 · Scanners</div><div class="d"><code>semgrep</code> · <code>gitleaks</code> · <code>pip-audit</code> — cheap, noisy, become candidates</div></div>
+      <div class="arrow"></div>
+      <div class="node llm"><div class="t">1 · Context builder</div><div class="d">PR + diff · issue, discussion, business rules · <b>security map of <code>main</code></b> (cached per commit) · dependency and workflow changes. User text is context, never evidence.</div></div>
+      <div class="arrow"></div>
+      <div class="node llm"><span class="tag">recall</span><div class="t">2 · Candidates</div><div class="d">Structured hypotheses, unpublished: category · exploitability · severity · source → sink · attacker precondition · how to prove it</div></div>
+      <div class="arrow"></div>
+      <div class="node llm"><span class="tag">precision</span><div class="t">3 · Validate</div><div class="d">Reachability · existing mitigations · framework & policy protections · remediation validity. Drop only with <code>file:line</code> evidence of a mitigation; log every drop.</div></div>
+      <div class="arrow"></div>
+      <div class="split">
+        <div class="node plain"><div class="t">Dedup</div><div class="d">Fingerprint: category + file + snippet hash. Dismissed stays dismissed unless code changed.</div></div>
+        <div class="node plain"><div class="t">PoC (optional)</div><div class="d">Only in a sandbox with no secrets and no network.</div></div>
+      </div>
+      <div class="arrow"></div>
+      <div class="split">
+        <div class="node human"><div class="t">Exploitable</div><div class="d">Private Security Advisory · PR shows a generic failure</div></div>
+        <div class="node plain"><div class="t">Other findings</div><div class="d">Inline PR comments</div></div>
+      </div>
+      <div class="arrow"></div>
+      <div class="node det"><div class="t">4 · Complete</div><div class="d">Check run per SHA · confirmed + high blocks · any finding raises PR risk · fails <b>closed</b> on medium+ if the flow errors</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ROUNDS ================= -->
+<section id="rounds">
+  <h2>Review rounds</h2>
+  <p class="section-sub">Full review once, then only what changed — capped, with a full pass before merge.</p>
+  <div class="rounds">
+    <div class="round full"><b>Round 1</b>Full review of the PR</div>
+    <div class="round inc"><b>Round 2</b>Only <code>last_reviewed..HEAD</code>, touched files read in full</div>
+    <div class="round inc"><b>Round 3</b>Incremental again</div>
+    <div class="round cap"><b>Cap hit</b>PR is churning → hand to a human</div>
+    <div class="round full"><b>Before merge</b>One full pass</div>
+  </div>
+  <p class="diagram-caption">Rebase or force-push (last SHA no longer an ancestor) → full review. <code>cancel-in-progress</code>: two quick pushes pay for one review.</p>
+</section>
+
+<!-- ================= EVAL ================= -->
+<section id="eval">
+  <h2>Evaluating the reviewer</h2>
+  <p class="section-sub">The reviewer is code. It gets tests, versions and regressions like any other code.</p>
+  <div class="diagram">
+    <div class="flow">
+      <div class="split">
+        <div class="node det"><div class="t">Reverts & incidents</div><div class="d">Each points to a PR the pipeline missed</div></div>
+        <div class="node llm"><div class="t">Disagreements</div><div class="d">Classifier vs verifier — the hard cases, human-labeled</div></div>
+      </div>
+      <div class="arrow"></div>
+      <div class="node plain"><div class="t">Eval set</div><div class="d">Replay each diff → expect the finding</div></div>
+      <div class="arrow"></div>
+      <div class="node det"><div class="t">Rescore on every change</div><div class="d">Prompts, <code>REVIEW.md</code>, tool lists and model IDs are code — a PR changing them must pass the eval</div></div>
+      <div class="arrow"></div>
+      <div class="node plain"><div class="t">Metrics</div><div class="d">Recall on known misses · precision from human dismiss rate · format adherence · escalation rate</div></div>
+    </div>
+  </div>
+  <div class="lesson"><b>Pin model IDs, never aliases.</b> <code>model: haiku</code> silently moves to a new version — the reviewer changes and nobody rescores.</div>
+</section>
+
+<!-- ================= LESSONS ================= -->
+<section id="lessons">
+  <h2>What building L1 taught</h2>
+  <p class="section-sub">Real observations from running the local reviewer on this repo.</p>
+  <div class="lesson"><b>"Non-blocking" can be wrong.</b> Haiku rated a substring-matching hook as harmless; minutes later the same bug blocked our own workflow. A human reads the review, not just the verdict.</div>
+  <div class="lesson"><b>Format drifts on cheap models.</b> A summary said "5 findings" over a list of 6. Format adherence is mechanically checkable — check it.</div>
+  <div class="lesson"><b>Reviewers re-raise settled decisions.</b> Trade-offs already documented came back every round until marked with <code>shortcut:</code>. Repeated noise is how trust dies.</div>
+  <div class="lesson"><b>Same issue, two verdicts.</b> A token-exposure finding was non-blocking on one run and blocking on the next — the only change was documenting the gap. Store one verdict per SHA, give blocking checks a human override, and define how documented trade-offs are graded.</div>
+  <div class="lesson"><b>Depth varies run to run.</b> One review opened the hook script and caught a doc contradiction; the next only checked that paths exist. Docs that make claims about code need a rule to verify behavior, not just paths.</div>
+  <div class="lesson"><b>The gate caught its own operator.</b> A marker written with a short SHA was rejected — the gate compares the exact full SHA a review vouches for.</div>
+</section>
+
+<!-- ================= CHEAT SHEET ================= -->
+<section id="cheat">
+  <h2>Interview cheat sheet</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Question</th><th>Short answer</th></tr></thead>
+    <tbody>
+      <tr><td>If L1 can be skipped, why build it?</td><td>It shrinks the loop, not enforces. Cuts CI rounds and PR noise; CI never trusts a local marker.</td></tr>
+      <tr><td>Why not an LLM for the issue check?</td><td>Anything a rule can decide, a rule decides — cheaper, faster, deterministic, auditable.</td></tr>
+      <tr><td>How is the verifier independent?</td><td>Different model, blind to the first verdict, adversarial prompt. Its decision stands; it can only raise.</td></tr>
+      <tr><td>Why trust an LLM with risk at all?</td><td>It can only escalate above owner-defined deterministic floors, never de-escalate.</td></tr>
+      <tr><td>How do you stop a PR gaming its own review?</td><td>Policy from <code>main</code>; PR code is data; touching policy files = high risk.</td></tr>
+      <tr><td><code>pull_request</code> vs <code>pull_request_target</code>?</td><td>PR-branch workflow without secrets vs base-branch workflow with secrets. Never run PR code with secrets.</td></tr>
+      <tr><td>Where do review tokens live?</td><td>An Environment locked to <code>main</code>, used by a <code>pull_request_target</code> job.</td></tr>
+      <tr><td>Prompt injection via the PR?</td><td>User text is never evidence; agents get read-only tools, no network.</td></tr>
+      <tr><td>How do you keep developers from ignoring it?</td><td>Count-first summaries, nit cap, <code>file:line</code> evidence, no re-raising, pre-existing never blocks.</td></tr>
+      <tr><td>How do you know it's any good?</td><td>Eval set from reverts, incidents and disagreements; rescore on any prompt/tool/model change; pinned IDs.</td></tr>
+      <tr><td>Two runs, two verdicts?</td><td>Store one per SHA, human override for blocking checks, explicit grading of documented trade-offs.</td></tr>
+      <tr><td>What does it cost per PR?</td><td>Deterministic first; AI after green CI; depth by risk; incremental re-review; cancel in-progress.</td></tr>
+      <tr><td>Can a bot approve?</td><td>Never. Comments and checks only; stale approvals dismissed.</td></tr>
+      <tr><td>Security findings on a public repo?</td><td>Private advisory — inline comments are disclosure.</td></tr>
+      <tr><td>Fail open or closed?</td><td>Open where nothing is at stake (local hook); closed for security on medium+ risk.</td></tr>
+      <tr><td>What decides how strict review is?</td><td>Blast radius: reversibility, data, dependents, detection speed.</td></tr>
+      <tr><td>Isn't review the last line of defense?</td><td>No — telemetry and rollback catch what review misses, and every regression becomes an eval case.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+</div>
+<script>
+(function () {
+  var root = document.documentElement, key = "review-pipeline-theme";
+  try { var saved = localStorage.getItem(key); if (saved) root.setAttribute("data-theme", saved); } catch (e) {}
+  document.getElementById("themeToggle").addEventListener("click", function () {
+    var dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(key, next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>
