@@ -1,10 +1,10 @@
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.auth import require_api_key
 from app.db import SessionDep
@@ -74,3 +74,28 @@ async def update_order(order_id: int, body: OrderPatch, session: SessionDep) -> 
     await session.commit()
     await session.refresh(order)
     return order
+
+
+REVENUE_SQL = text(
+    """
+    SELECT u.id AS user_id, u.email, SUM(o.amount_cents) AS revenue_cents
+    FROM users u
+    JOIN orders o ON o.user_id = u.id
+    WHERE o.status = 'paid'
+      AND (CAST(:since AS date) IS NULL OR o.created_at >= CAST(:since AS date))
+    GROUP BY u.id, u.email
+    ORDER BY revenue_cents DESC, u.id
+    """
+)
+
+
+class RevenueRow(BaseModel):
+    user_id: int
+    email: str
+    revenue_cents: int
+
+
+@router.get("/reports/revenue", response_model=list[RevenueRow])
+async def revenue_report(session: SessionDep, since: date | None = None) -> list[dict]:
+    result = await session.execute(REVENUE_SQL, {"since": since})
+    return [dict(row) for row in result.mappings()]
