@@ -118,6 +118,7 @@ Expensive code gets **more people and more checks**: higher floor, deeper review
 - Content rules (grep, LLM backup): raw SQL (`text(`), lock removal, new endpoints.
 - Any PR touching policy files → **high**.
 - If floors already say medium/high, skip the classifier and verifier (humans are required anyway).
+- Every rule carries a `why` in REVIEW.md (missing one fails closed). Each reason in the report reads `level · file:line · rule — why — proof`, highest first; the proof is the matching changed line, quoted from the diff by code, never by a model. The risk line says what the level costs: `Risk: high → 2 human approvals required`.
 
 **2. Classifier (cheap model).** Rates the PR low / medium / high. Can only **raise** above the floor, never lower.
 

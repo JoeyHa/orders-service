@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 
+from review.approvals import REQUIRED
 from review.diff import parse_diff
 from review.reviewer import ReviewResult, summarize
 from review.rounds import Marker, RoundPlan, format_marker
@@ -60,7 +61,13 @@ def build_review(
         parts.append(f"**Review failed, so this check blocks:** {result.error}")
     else:
         parts.append(f"**{summarize(result.findings, len(result.unverified))}**")
-    parts.append(f"**Risk: {result.risk_level}**")
+    needed = REQUIRED[f"risk:{result.risk_level}"]
+    humans = {0: "no human approval", 1: "1 human approval"}.get(
+        needed, f"{needed} human approvals"
+    )
+    parts.append(
+        f"**Risk: {result.risk_level} → {humans} required.** Risk is blast radius, not defects."
+    )
     parts += [f"- {r}" for r in risk_reasons]
     if result.escalated:
         parts.append("A quick review found a blocking issue, so it was re-reviewed at deep depth.")

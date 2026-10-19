@@ -1,36 +1,62 @@
 """L4: decide a PR's risk. Deterministic floors first; models may only raise the level."""
 
+import re
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 
 from review.agent import AgentError, run_structured
-from review.diff import parse_diff
+from review.diff import DiffLine, parse_diff
 from review.policy import Floors
-from review.schema import Level, RiskVerdict, max_level
+from review.schema import LEVELS, Level, RiskVerdict, max_level
+
+MAX_PROOF_CHARS = 120
+
+
+def _code(text: str) -> str:
+    """Markdown code span that diff text (author-controlled) cannot close early."""
+    if len(text) > MAX_PROOF_CHARS:
+        text = text[:MAX_PROOF_CHARS] + "…"
+    if "`" not in text:
+        return f"`{text}`"
+    fence = "`" * (max(len(run) for run in re.findall(r"`+", text)) + 1)
+    return f"{fence} {text} {fence}"
+
+
+def _location(line: DiffLine) -> str:
+    if line.new_line is None:
+        return f"{_code(line.path)} (removed line)"
+    return _code(f"{line.path}:{line.new_line}")
 
 
 def apply_floors(diff: str, floors: Floors) -> tuple[Level, list[str]]:
-    level: Level = "low"
-    reasons: list[str] = []
+    """Floor level and its reasons, highest first: `level · where · rule — why — proof`."""
+    found: list[tuple[Level, str]] = []
     if "\ufffd" in diff:  # bytes that were not valid UTF-8, replaced on decode
-        level, reasons = "medium", ["diff contains bytes that are not UTF-8 (medium)"]
+        found.append(("medium", "medium · diff contains bytes that are not UTF-8"))
     paths, hunk_lines = parse_diff(diff)
-    changed: dict[str, list[str]] = {p: [] for p in paths}
+    changed: dict[str, list[DiffLine]] = {p: [] for p in paths}
     for line in hunk_lines:
         if line.kind in "+-":
-            changed.setdefault(line.path, []).append(line.text)
+            changed.setdefault(line.path, []).append(line)
     for path, lines in changed.items():
         for rule_level, globs in floors.paths.items():
             for glob in globs:
                 if fnmatchcase(path, glob):
-                    level = max_level(level, rule_level)
-                    reasons.append(f"{path} matches {glob} ({rule_level})")
+                    found.append((rule_level, (
+                        f"{rule_level} · {_code(path)} · path rule {_code(glob)}"
+                        f" — why: {floors.why[glob]} — proof: this PR changes this file"
+                    )))  # fmt: skip
         for rule_level, patterns in floors.content.items():
             for pattern in patterns:
-                if any(pattern.search(line) for line in lines):
-                    level = max_level(level, rule_level)
-                    reasons.append(f"{path}: changed line matches {pattern.pattern} ({rule_level})")
-    return level, reasons
+                hits = [ln for ln in lines if pattern.search(ln.text)]
+                if hit := min(hits, key=lambda ln: ln.kind != "+", default=None):  # new code first
+                    found.append((rule_level, (
+                        f"{rule_level} · {_location(hit)} · line rule {_code(pattern.pattern)}"
+                        f" — why: {floors.why[pattern.pattern]}"
+                        f" — proof: {_code(hit.kind + hit.text)}"
+                    )))  # fmt: skip
+    found.sort(key=lambda f: LEVELS.index(f[0]), reverse=True)  # stable: diff order within a level
+    return max_level("low", *(lvl for lvl, _ in found)), [reason for _, reason in found]
 
 
 # --- classifier + verifier -------------------------------------------------------------
@@ -75,7 +101,7 @@ async def decide_risk(diff, floors, *, pr_text, root, run=run_structured) -> Ris
     floor, reasons = apply_floors(diff, floors)
     if len(diff) > MAX_DIFF_CHARS:
         floor = max_level(floor, "medium")
-        reasons.append(f"diff is larger than {MAX_DIFF_CHARS} chars (medium)")
+        reasons.append(f"medium · diff is larger than {MAX_DIFF_CHARS} chars")
     decision = RiskDecision(level=floor, reasons=reasons)
     if floor != "low":
         return decision  # humans are required anyway; don't spend tokens

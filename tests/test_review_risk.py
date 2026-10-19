@@ -9,7 +9,9 @@ from review.risk import CLASSIFIER_MODEL, MAX_DIFF_CHARS, VERIFIER_MODEL, decide
 from review.schema import RiskVerdict
 
 FLOORS = load_floors(
-    '## Risk floors\n\n```json\n{"paths": {"medium": ["migrations/**"]}, "content": {}}\n```\n'
+    "## Risk floors\n\n```json\n"
+    '{"paths": {"medium": ["migrations/**"]}, "content": {}, "why": {"migrations/**": "s"}}'
+    "\n```\n"
 )
 DOCS_DIFF = "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+docs\n"
 MIGRATION_DIFF = "--- a/migrations/x.py\n+++ b/migrations/x.py\n@@ -1 +1 @@\n+x\n"

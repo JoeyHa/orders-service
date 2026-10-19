@@ -134,3 +134,12 @@ def test_label_removal_404_is_fine(monkeypatch):
 
     monkeypatch.setattr(github.subprocess, "run", fake_run)
     github.set_labels("o/r", 1, ["risk:high"])
+
+
+@pytest.mark.parametrize(
+    "level,needed",
+    [("low", "no human approval"), ("medium", "1 human approval"), ("high", "2 human approvals")],
+)
+def test_risk_line_says_what_the_level_means(level, needed):
+    body = build(ReviewResult(depth="standard", risk_level=level, findings=[]))["body"]
+    assert f"**Risk: {level} → {needed} required.** Risk is blast radius, not defects." in body
