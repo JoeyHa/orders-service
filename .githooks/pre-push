@@ -1,0 +1,3 @@
+#!/bin/sh
+# Enable with: git config core.hooksPath .githooks   (skip once with: git push --no-verify)
+exec "$(git rev-parse --show-toplevel)/scripts/check-pre-pr.sh"

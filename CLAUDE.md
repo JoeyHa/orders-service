@@ -10,6 +10,7 @@ Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16
 
 - `app/api/` routers (`users.py`, `orders.py`) · `app/models.py` ORM · `app/db.py` engine + `SessionDep` · `app/auth.py` `require_api_key` · `app/config.py` env settings
 - `migrations/versions/` Alembic · `tests/` real-Postgres tests
+- `scripts/` + `.githooks/` pre-push gate · `.claude/` skills, `diff-reviewer` agent, hook settings
 
 ## Conventions
 
@@ -23,6 +24,8 @@ Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16
 8. Config comes only from env through `app/config.py`. Secrets have no defaults.
 9. Tests hit real Postgres; no DB mocks. Every new endpoint behavior gets a test.
 10. FastAPI dependencies use `Annotated[...]`. `ruff check` and `ruff format --check` stay clean.
+
+Before pushing or opening a PR, run `/pre-pr` (lint, tests, build, diff review). Pushes are gated on it.
 
 If a PR changes something this file states (stack, layout, a convention, commands), update this file in the same PR.
 
