@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
@@ -77,9 +78,18 @@ async def test_patch_unknown_status(client, auth, user_id):
     assert r.status_code == 422
 
 
-async def test_concurrent_transitions_one_wins(client, auth, user_id):
+async def test_concurrent_transitions_one_wins(client, auth, user_id, monkeypatch):
     order = await make_order(client, auth, user_id)
     url = f"/orders/{order['id']}"
+
+    # delay each commit so both requests read the order before either writes
+    original_commit = AsyncSession.commit
+
+    async def slow_commit(self):
+        await asyncio.sleep(0.2)
+        await original_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", slow_commit)
     r1, r2 = await asyncio.gather(
         client.patch(url, json={"status": "paid"}, headers=auth),
         client.patch(url, json={"status": "cancelled"}, headers=auth),
