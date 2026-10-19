@@ -1,6 +1,6 @@
 # orders-service
 
-Small orders API: users, orders with a `pending → paid | cancelled` lifecycle, and a paid-revenue report. Full design: `docs/design.md`. Run/test commands: `README.md`. Review process: `docs/review-pipeline.md`.
+Small orders API: users, orders with a `pending → paid | cancelled`, `paid → refunded` lifecycle, and a paid-revenue report. Full design: `docs/design.md`. Run/test commands: `README.md`. Review process: `docs/review-pipeline.md`.
 
 ## Stack
 

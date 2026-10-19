@@ -52,3 +52,12 @@ async def test_revenue_empty(client):
 async def test_revenue_bad_date(client):
     r = await client.get("/reports/revenue", params={"since": "yesterday"})
     assert r.status_code == 422
+
+
+async def test_revenue_excludes_refunded(client, auth):
+    a, b = await setup_orders(client, auth)
+    orders = (await client.get("/orders", params={"user_id": b})).json()
+    paid = next(o for o in orders if o["status"] == "paid")
+    await client.patch(f"/orders/{paid['id']}", json={"status": "refunded"}, headers=auth)
+    r = await client.get("/reports/revenue")
+    assert r.json() == [{"user_id": a, "email": "a@x.com", "revenue_cents": 1200}]

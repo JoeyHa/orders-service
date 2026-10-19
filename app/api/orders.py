@@ -12,8 +12,8 @@ from app.models import INT4_MAX, Order, User
 
 router = APIRouter(tags=["orders"])
 
-OrderStatus = Literal["pending", "paid", "cancelled"]
-ALLOWED_TRANSITIONS = {("pending", "paid"), ("pending", "cancelled")}
+OrderStatus = Literal["pending", "paid", "cancelled", "refunded"]
+ALLOWED_TRANSITIONS = {("pending", "paid"), ("pending", "cancelled"), ("paid", "refunded")}
 
 
 class OrderIn(BaseModel):

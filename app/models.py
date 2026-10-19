@@ -23,7 +23,9 @@ class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
         CheckConstraint("amount_cents >= 0", name="ck_orders_amount_nonneg"),
-        CheckConstraint("status IN ('pending', 'paid', 'cancelled')", name="ck_orders_status"),
+        CheckConstraint(
+            "status IN ('pending', 'paid', 'cancelled', 'refunded')", name="ck_orders_status"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

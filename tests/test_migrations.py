@@ -17,3 +17,11 @@ async def test_negative_amount_rejected_by_db():
     with pytest.raises(IntegrityError):
         async with engine.begin() as conn:
             await conn.execute(text("INSERT INTO orders (user_id, amount_cents) VALUES (1, -1)"))
+
+
+async def test_refunded_status_allowed_by_db():
+    async with engine.begin() as conn:
+        await conn.execute(text("INSERT INTO users (email, name) VALUES ('a@x.com', 'A')"))
+        await conn.execute(
+            text("INSERT INTO orders (user_id, amount_cents, status) VALUES (1, 1, 'refunded')")
+        )

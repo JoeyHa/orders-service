@@ -37,7 +37,7 @@ README.md
 ## Data model
 
 - **users**: `id` (PK), `email` (unique, not null), `name`, `created_at`
-- **orders**: `id` (PK), `user_id` (FK → users.id, not null), `amount_cents` (int, not null, ≥ 0), `status` (`pending` | `paid` | `cancelled`), `created_at`, `updated_at`
+- **orders**: `id` (PK), `user_id` (FK → users.id, not null), `amount_cents` (int, not null, ≥ 0), `status` (`pending` | `paid` | `cancelled` | `refunded`), `created_at`, `updated_at`
 
 ## API
 
@@ -50,7 +50,7 @@ All write endpoints require `X-API-Key` matching `API_KEY` (401 otherwise). Read
 | GET | `/users/{id}` | 404 if missing |
 | POST | `/orders` | Create order for existing user (404 if user missing), status `pending` |
 | GET | `/orders?user_id=` | List orders, optional filter |
-| PATCH | `/orders/{id}` | Update status; only `pending → paid` / `pending → cancelled` allowed, else 409 |
+| PATCH | `/orders/{id}` | Update status; only `pending → paid` / `pending → cancelled` / `paid → refunded` allowed, else 409 |
 | GET | `/reports/revenue` | Raw SQL (`sqlalchemy.text`, bound params): paid revenue per user, optional `since` date |
 
 Status changes run in a single transaction with a row lock (`SELECT ... FOR UPDATE`) so concurrent updates can't both succeed.
