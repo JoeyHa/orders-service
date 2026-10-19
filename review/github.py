@@ -98,10 +98,16 @@ def _risk_section(level: str, reasons: list[Reason], *, escalated: bool) -> list
 
 
 def build_review(
-    result: ReviewResult, *, head_sha: str, plan: RoundPlan, risk_reasons: list[Reason], diff: str
+    result: ReviewResult,
+    *,
+    head_sha: str,
+    plan: RoundPlan,
+    risk_reasons: list[Reason],
+    diff: str,  # the PR's full diff: GitHub accepts inline comments only on its lines
+    human_before: bool = False,  # an earlier round already required a human
 ) -> dict:
     verdict = "block" if result.blocking else "pass"
-    human = humans_for_findings(result.findings) > 0
+    human = human_before or humans_for_findings(result.findings) > 0
     marker = Marker(head_sha, plan.round, verdict, result.risk_level, human)
     on_diff = commentable_lines(diff)
     inline = [
@@ -116,7 +122,7 @@ def build_review(
         icon = "❌" if result.blocking else ("⚠️" if result.findings or result.unverified else "✅")
         verdict = f"{icon} {summarize(result.findings, len(result.unverified)).rstrip('.')}"
     by_risk = REQUIRED[f"risk:{result.risk_level}"]
-    by_findings = humans_for_findings(result.findings)
+    by_findings = int(human)
     needed = max(by_risk, by_findings)
     humans = _HUMANS.get(needed, f"{needed} humans")
     risk = f"{_ICON[result.risk_level]} {result.risk_level}"
@@ -135,7 +141,7 @@ def build_review(
             if (n := sum(f.severity == s for f in result.findings))
         )
         if serious
-        else "0 blocking or important"
+        else ("earlier round: blocking or important" if human_before else "0 blocking or important")
     )
     parts += [
         "### Who must review",
@@ -179,8 +185,10 @@ def risk_labels(level: str, *, needs_human: bool) -> list[str]:
 def _gh(*args: str, payload: dict | None = None) -> str:
     out = subprocess.run(
         ["gh", "api", *args], input=json.dumps(payload) if payload else None,
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )  # fmt: skip
+    if out.returncode != 0:  # keep GitHub's reason; CalledProcessError drops stderr from the log
+        raise RuntimeError(f"gh api {' '.join(args[:3])} failed: {out.stderr.strip()}")
     return out.stdout
 
 

@@ -254,3 +254,16 @@ def test_marker_records_that_a_finding_needs_a_human():
 def test_dropped_findings_never_show_a_green_check():
     r = ReviewResult(depth="quick", risk_level="low", findings=[], unverified=[finding(11)])
     assert "| ⚠️ 0 findings; 1 unverified" in build(r)["body"]
+
+
+def test_gh_failure_reports_github_s_error(monkeypatch):
+    import subprocess as sp
+
+    from review import github
+
+    def fake_run(cmd, **kw):
+        return sp.CompletedProcess(cmd, 1, "", "HTTP 422: Line could not be resolved")
+
+    monkeypatch.setattr(github.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError, match="Line could not be resolved"):
+        github.post_review("o/r", 1, {"body": "x"})
