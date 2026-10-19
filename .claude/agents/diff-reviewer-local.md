@@ -1,5 +1,5 @@
 ---
-name: diff-reviewer
+name: diff-reviewer-local
 description: Reviews the current branch's diff against origin/main using REVIEW.md and CLAUDE.md. Read-only. Spawned by the pre-pr skill.
 tools: Read, Grep, Glob, Bash
 model: claude-haiku-5-5

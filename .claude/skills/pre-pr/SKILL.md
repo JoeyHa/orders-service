@@ -15,7 +15,7 @@ Layer 1 of review. Opening a PR (`gh pr create`) is gated on this passing for th
    docker build -q -t orders-service:pre-pr .
    ```
    `pytest` needs `DATABASE_URL` (see `.env.example`); `tests/conftest.py` defaults it to the compose Postgres.
-3. **Review.** Spawn the `diff-reviewer` agent with the prompt: "Review origin/main...HEAD." Do not review the diff yourself, and do not pass it your own opinion of the change.
+3. **Review.** Spawn the `diff-reviewer-local` agent with the prompt: "Review origin/main...HEAD." Do not review the diff yourself, and do not pass it your own opinion of the change.
 4. **Record.** Write the result for the gate — line 1 the HEAD SHA, line 2 the verdict word from the agent's last line, then the review:
    ```bash
    { git rev-parse HEAD; echo PASS_OR_BLOCK; cat <<'REVIEW'

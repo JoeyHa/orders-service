@@ -10,7 +10,7 @@ Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16
 
 - `app/api/` routers (`users.py`, `orders.py`) · `app/models.py` ORM · `app/db.py` engine + `SessionDep` · `app/auth.py` `require_api_key` · `app/config.py` env settings
 - `migrations/versions/` Alembic · `tests/` real-Postgres tests
-- `review/` CI review layers (risk, AI review, approvals) · `scripts/` PR gate and issue-link check · `.claude/` skills, `diff-reviewer` agent, hook settings
+- `review/` CI review layers (risk, AI review, approvals) · `scripts/` PR gate and issue-link check · `.claude/` skills, `diff-reviewer-local` agent, hook settings
 
 ## Conventions
 
