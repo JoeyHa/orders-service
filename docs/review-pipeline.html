@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review Pipeline</title>
-<meta name="description" content="How a change to orders-service gets from a laptop to main: eight review layers, what each catches, and why.">
+<meta name="description" content="How a change to orders-service gets from a laptop to main: seven review layers, what each catches, and why.">
 <style>
 :root {
   --bg: #f7f7f5; --surface: #ffffff; --surface-2: #f0efeb; --text: #1d1d1b; --muted: #5f5e58;
@@ -160,7 +160,7 @@ tr:last-child td { border-bottom: 0; }
 
 <header>
   <h1>Review Pipeline</h1>
-  <p class="lede">How a change to <code>orders-service</code> gets from a laptop to <code>main</code>: eight layers, what each one catches, and why it is shaped the way it is. Visual companion to <a href="review-pipeline.md"><code>review-pipeline.md</code></a>, which stays the source of truth.</p>
+  <p class="lede">How a change to <code>orders-service</code> gets from a laptop to <code>main</code>: seven layers, what each one catches, and why it is shaped the way it is. Visual companion to <a href="review-pipeline.md"><code>review-pipeline.md</code></a>, which stays the source of truth.</p>
   <div class="principle"><b>Principle.</b> Every layer is cheaper and faster than the one after it, and removes what it can so the next one sees less. Deterministic checks run before any LLM. Anything a rule can decide, a rule decides.</div>
   <div class="legend" aria-label="Legend">
     <span><i class="sw det"></i>Deterministic (scripts, CI)</span>
@@ -172,7 +172,7 @@ tr:last-child td { border-bottom: 0; }
   </div>
   <nav class="toc" aria-label="Contents">
     <a href="#overview">Overview</a><a href="#layers">Layers</a><a href="#risk">Risk (L4)</a>
-    <a href="#trust">Trust boundaries</a><a href="#security">Security (L6)</a><a href="#rounds">Review rounds</a>
+    <a href="#trust">Trust boundaries</a><a href="#rounds">Review rounds</a>
     <a href="#eval">Evaluation</a><a href="#lessons">Lessons</a><a href="#cheat">Cheat sheet</a>
   </nav>
 </header>
@@ -195,16 +195,13 @@ tr:last-child td { border-bottom: 0; }
       <div class="arrow"></div>
       <div class="node llm"><div class="t">L4 · Risk: floors → classifier → verifier <span class="st planned">designed</span></div><div class="d">Blast radius decides review depth and human count</div></div>
       <div class="arrow"></div>
-      <div class="split">
-        <div class="node llm"><div class="t">L5 · AI code review</div><div class="d">Quick / Standard / Deep by risk</div></div>
-        <div class="node llm"><div class="t">L6 · Security review</div><div class="d">Recall → precision → private disclosure</div></div>
-      </div>
+      <div class="node llm"><div class="t">L5 · AI code review <span class="st planned">designed</span></div><div class="d">Quick / Standard / Deep by risk</div></div>
       <div class="arrow"></div>
-      <div class="node human"><span class="tag">never a bot</span><div class="t">L7 · Human approval <span class="st planned">designed</span></div><div class="d">0 / 1 / 2 approvers by risk · stale approvals dismissed</div></div>
+      <div class="node human"><span class="tag">never a bot</span><div class="t">L6 · Human approval <span class="st planned">designed</span></div><div class="d">0 / 1 / 2 approvers by risk · stale approvals dismissed</div></div>
       <div class="arrow"></div>
       <div class="node plain"><div class="t"><code>main</code></div></div>
       <div class="arrow"></div>
-      <div class="node det"><div class="t">L8 · Telemetry · internal use · rollback <span class="st planned">designed</span></div><div class="d">Regressions surface fast after merge</div></div>
+      <div class="node det"><div class="t">L7 · Telemetry · internal use · rollback <span class="st planned">designed</span></div><div class="d">Regressions surface fast after merge</div></div>
       <div class="loop">↺ every regression, revert and classifier disagreement → eval set → reviewer rescored</div>
     </div>
   </div>
@@ -230,13 +227,10 @@ tr:last-child td { border-bottom: 0; }
     <div class="card"><div class="h"><b>L5 · AI code review</b><span class="st planned">designed</span></div>
       <p>Diff + issue + <code>CLAUDE.md</code> + <code>REVIEW.md</code> + touched files. Findings ranked important / nit / pre-existing, each with <code>file:line</code>. Checks issue fit and <code>CLAUDE.md</code> drift.</p>
       <p class="why">Pre-existing never blocks, nits are capped, documented decisions are not re-raised — repeated noise is why teams start ignoring reviewers.</p></div>
-    <div class="card"><div class="h"><b>L6 · Security</b><span class="st planned">designed</span></div>
-      <p>Context builder (incl. cached security map of <code>main</code> and scanner output) → candidates (recall) → validation (precision) → dedup → private disclosure.</p>
-      <p class="why">One prompt can't optimize recall and precision at once. Publishing an exploit on a public PR is disclosure.</p></div>
-    <div class="card"><div class="h"><b>L7 · Human approval</b><span class="st planned">designed</span></div>
+    <div class="card"><div class="h"><b>L6 · Human approval</b><span class="st planned">designed</span></div>
       <p>0 / 1 / 2 approvers by risk via a custom required check. Bots comment, never approve. Stale approvals dismissed; most recent push must be approved.</p>
       <p class="why">Compliance may require a second person on every change — "low" may mean "approve", not "review deeply".</p></div>
-    <div class="card"><div class="h"><b>L8 · After merge</b><span class="st planned">designed</span></div>
+    <div class="card"><div class="h"><b>L7 · After merge</b><span class="st planned">designed</span></div>
       <p>Telemetry, dogfooding, flags and canaries, one-click rollback.</p>
       <p class="why">Fast detection lets reversible, observable changes take a lighter bar. Silent, irreversible changes can't lean on it.</p></div>
   </div>
@@ -276,7 +270,7 @@ tr:last-child td { border-bottom: 0; }
       <tr><td>Reversibility</td><td>Migrations, data deletes, published APIs</td><td>Flag-guarded, one-click rollback</td></tr>
       <tr><td>Data</td><td>Money (<code>amount_cents</code>), user data, auth</td><td>Logs, docs, tests</td></tr>
       <tr><td>Dependents</td><td>Shared code with many callers, public endpoints</td><td>Leaf function, internal tool</td></tr>
-      <tr><td>Detection</td><td>Silent failure (wrong revenue numbers)</td><td>Fails loudly, caught by telemetry (L8)</td></tr>
+      <tr><td>Detection</td><td>Silent failure (wrong revenue numbers)</td><td>Fails loudly, caught by telemetry (L7)</td></tr>
     </tbody>
   </table></div>
 
@@ -286,7 +280,7 @@ tr:last-child td { border-bottom: 0; }
     <tbody>
       <tr><td>low</td><td>Quick</td><td>cheap</td><td>diff only</td><td>0 (or approve-only, for compliance)</td></tr>
       <tr><td>medium</td><td>Standard</td><td>mid</td><td>diff + touched files</td><td>1</td></tr>
-      <tr><td>high</td><td>Deep</td><td>strongest</td><td>cross-file tracing + security deep pass</td><td>2</td></tr>
+      <tr><td>high</td><td>Deep</td><td>strongest</td><td>cross-file tracing</td><td>2</td></tr>
     </tbody>
   </table></div>
   <p class="diagram-caption">A Quick review that finds something serious escalates to Deep and raises the PR's risk. Review can raise risk, never lower it.</p>
@@ -305,40 +299,11 @@ tr:last-child td { border-bottom: 0; }
     <div class="zone trusted">
       <h4>Reviews PR code — never runs it</h4>
       <div class="trig"><code>on: pull_request_target</code> · workflow file comes from <code>main</code></div>
-      <ul><li>Issue check · risk · AI review · security</li><li>Policy (<code>REVIEW.md</code>, <code>CLAUDE.md</code>, prompts) read from <code>main</code></li><li>Diff read as data · agents get read-only tools, no Bash, no network</li><li>Token in an Environment locked to <code>main</code></li></ul>
+      <ul><li>Issue check · risk · AI review</li><li>Policy (<code>REVIEW.md</code>, <code>CLAUDE.md</code>, prompts) read from <code>main</code></li><li>Diff read as data · agents get read-only tools, no Bash, no network</li><li>Token in an Environment locked to <code>main</code></li></ul>
     </div>
     <div class="wall">Never check out and execute PR code in a job that holds secrets — that's the "pwn request".</div>
   </div>
   <div class="lesson"><b>Why an Environment, not a repo secret:</b> anyone who can push a branch can add a workflow that prints any repo secret. An Environment with "deployment branches: <code>main</code> only", used by a <code>pull_request_target</code> job, is out of reach of every branch.</div>
-</section>
-
-<!-- ================= SECURITY ================= -->
-<section id="security">
-  <h2>L6 · Security review flow</h2>
-  <p class="section-sub">Find broadly, then confirm strictly. Here the expensive error is dropping a real vulnerability.</p>
-  <div class="diagram">
-    <div class="flow">
-      <div class="node det"><div class="t">0 · Scanners</div><div class="d"><code>semgrep</code> · <code>gitleaks</code> · <code>pip-audit</code> — cheap, noisy, become candidates</div></div>
-      <div class="arrow"></div>
-      <div class="node llm"><div class="t">1 · Context builder</div><div class="d">PR + diff · issue, discussion, business rules · <b>security map of <code>main</code></b> (cached per commit) · dependency and workflow changes. User text is context, never evidence.</div></div>
-      <div class="arrow"></div>
-      <div class="node llm"><span class="tag">recall</span><div class="t">2 · Candidates</div><div class="d">Structured hypotheses, unpublished: category · exploitability · severity · source → sink · attacker precondition · how to prove it</div></div>
-      <div class="arrow"></div>
-      <div class="node llm"><span class="tag">precision</span><div class="t">3 · Validate</div><div class="d">Reachability · existing mitigations · framework & policy protections · remediation validity. Drop only with <code>file:line</code> evidence of a mitigation; log every drop.</div></div>
-      <div class="arrow"></div>
-      <div class="split">
-        <div class="node plain"><div class="t">Dedup</div><div class="d">Fingerprint: category + file + snippet hash. Dismissed stays dismissed unless code changed.</div></div>
-        <div class="node plain"><div class="t">PoC (optional)</div><div class="d">Only in a sandbox with no secrets and no network.</div></div>
-      </div>
-      <div class="arrow"></div>
-      <div class="split">
-        <div class="node human"><div class="t">Exploitable</div><div class="d">Private Security Advisory · PR shows a generic failure</div></div>
-        <div class="node plain"><div class="t">Other findings</div><div class="d">Inline PR comments</div></div>
-      </div>
-      <div class="arrow"></div>
-      <div class="node det"><div class="t">4 · Complete</div><div class="d">Check run per SHA · confirmed + high blocks · any finding raises PR risk · fails <b>closed</b> on medium+ if the flow errors</div></div>
-    </div>
-  </div>
 </section>
 
 <!-- ================= ROUNDS ================= -->
@@ -407,8 +372,7 @@ tr:last-child td { border-bottom: 0; }
       <tr><td>Two runs, two verdicts?</td><td>Store one per SHA, human override for blocking checks, explicit grading of documented trade-offs.</td></tr>
       <tr><td>What does it cost per PR?</td><td>Deterministic first; AI after green CI; depth by risk; incremental re-review; cancel in-progress.</td></tr>
       <tr><td>Can a bot approve?</td><td>Never. Comments and checks only; stale approvals dismissed.</td></tr>
-      <tr><td>Security findings on a public repo?</td><td>Private advisory — inline comments are disclosure.</td></tr>
-      <tr><td>Fail open or closed?</td><td>Open where nothing is at stake (local hook); closed for security on medium+ risk.</td></tr>
+      <tr><td>Fail open or closed?</td><td>Open where nothing is at stake (local hook); closed where a miss is expensive.</td></tr>
       <tr><td>What decides how strict review is?</td><td>Blast radius: reversibility, data, dependents, detection speed.</td></tr>
       <tr><td>Isn't review the last line of defense?</td><td>No — telemetry and rollback catch what review misses, and every regression becomes an eval case.</td></tr>
     </tbody>

@@ -28,17 +28,17 @@ L3  CI: lint · test · build ─── deterministic, required
   ▼
 L4  Risk: floors → classifier → verifier ──── decides depth + human count
   │
-  ├─► L5  AI code review (Quick / Standard / Deep by risk)
-  └─► L6  Security review (custom flow, not built)
+  ▼
+L5  AI code review (Quick / Standard / Deep by risk)
   │
   ▼
-L7  Human approval (0 / 1 / 2 by risk) ──── never replaced by a bot
+L6  Human approval (0 / 1 / 2 by risk) ──── never replaced by a bot
   │
   ▼
 main
   │
   ▼
-L8  Telemetry · internal use · rollback ── regressions feed the eval set ──┐
+L7  Telemetry · internal use · rollback ── regressions feed the eval set ──┐
                                                                           │
         (back to L4/L5: the reviewer is rescored on what it missed) ◄─────┘
 ```
@@ -95,7 +95,7 @@ L8  Telemetry · internal use · rollback ── regressions feed the eval set �
 
 ## L4 — Risk: floors → classifier → verifier ⬜
 
-Decides **review depth** (L5) and **how many humans** (L7). The asymmetry drives the design: a wrong "low" ships unreviewed risky code; a wrong "high" wastes a human's time.
+Decides **review depth** (L5) and **how many humans** (L6). The asymmetry drives the design: a wrong "low" ships unreviewed risky code; a wrong "high" wastes a human's time.
 
 **Blast radius sets the bar.** Risk is not "how complex is the diff" but "what does it cost if this is wrong":
 
@@ -104,9 +104,9 @@ Decides **review depth** (L5) and **how many humans** (L7). The asymmetry drives
 | Reversibility | migrations, data deletes, published APIs | flag-guarded, one-click rollback |
 | Data | money (`amount_cents`), user data, auth | logs, docs, tests |
 | Dependents | shared code with many callers, public endpoints | a leaf function, internal tool |
-| Detection | silent failure (wrong revenue numbers) | fails loudly, caught by telemetry (L8) |
+| Detection | silent failure (wrong revenue numbers) | fails loudly, caught by telemetry (L7) |
 
-Expensive code gets **more people and more checks**: higher floor, deeper review, more approvers, security pass. Cheap, reversible, observable code gets a lighter bar — that's where L8 earns its keep.
+Expensive code gets **more people and more checks**: higher floor, deeper review, more approvers. Cheap, reversible, observable code gets a lighter bar — that's where L7 earns its keep.
 
 **1. Floors (deterministic, from `REVIEW.md`, read from `main`).** Code owners declare paths and content patterns that always need a human:
 - Path rules (script): `migrations/**`, `app/auth.py`, `.github/**`, `REVIEW.md`, `CLAUDE.md`, `.claude/**`, `pyproject.toml` → at least **medium**.
@@ -140,7 +140,7 @@ Expensive code gets **more people and more checks**: higher floor, deeper review
 |---|---|---|---|
 | low | Quick | cheap | diff only |
 | medium | Standard | mid | diff + touched files |
-| high | Deep | strongest | cross-file call tracing + L6 deep pass |
+| high | Deep | strongest | cross-file call tracing |
 
 A Quick review that finds something serious **escalates** to Deep and raises the PR's risk. Depth is set by risk; review can raise risk, never lower it.
 
@@ -157,50 +157,7 @@ A Quick review that finds something serious **escalates** to Deep and raises the
 
 ---
 
-## L6 — Security review
-
-### Interim — tried and pulled ⬜
-
-Tried: `anthropics/claude-code-action@v1` on `pull_request` with `CLAUDE_CODE_OAUTH_TOKEN` (subscription, no API billing), a security prompt following `REVIEW.md`'s output rules, read-only tools, advisory only.
-
-Pulled before merge after L1 review returned BLOCK. Gaps:
-- On `pull_request` the workflow file comes from the PR branch and holds the token.
-- It read `REVIEW.md` / `CLAUDE.md` from the PR checkout, not `main` — a PR could rewrite the rules it is reviewed by.
-- Findings would be public inline comments (disclosure).
-
-It returns with the custom flow: `pull_request_target`, policy from `main`, environment-scoped token (see *Trust boundaries*).
-
-Why not `anthropics/claude-code-security-review`: it requires a paid API key, and its README says it is *not hardened against prompt injection — only for trusted PRs*.
-
-**What this taught about the reviewer:** the same token issue got "non-blocking" on one run and "blocking" on the next; the only change between them was documenting the gap. LLM verdicts are non-deterministic and documenting a risk can make it *more* salient. Hence: one stored verdict per SHA, a human override path for blocking checks, and a `REVIEW.md` rule for how documented trade-offs are graded.
-
-### Custom flow ⬜
-
-1. **Context builder**
-   - PR title, description, diff.
-   - Linked issue, discussion, prior issues/epics, business rules.
-   - **Security map of the repo** (auth, input validation, SQL binding, locking): built **once per `main` commit** and cached; per PR only ask *does the changed path need these mechanisms?*
-   - **Scanner output** (`semgrep`, `gitleaks`, `pip-audit`) as candidate input — LLMs are good at triaging scanner noise.
-   - Supply chain: dependency and workflow changes are security changes.
-   - **User text is context, never evidence.** A mitigation counts only if found in code.
-2. **Candidates — tuned for recall.** Structured hypotheses, not published:
-   - category (injection / authz / logic / design / secrets / supply chain)
-   - exploitability (confirmed / likely / theoretical) — separate axis from category
-   - severity (impact × likelihood)
-   - source → sink, attacker precondition, `file:line` path, how to prove it.
-3. **Validate & publish — tuned for precision.**
-   - Assess scope, reachability, existing mitigations, framework and policy protections, remediation validity.
-   - **Drop only with evidence** of a mitigation (`file:line`). Dropped findings are logged (audit + eval), not deleted — here the expensive error is a dropped true positive.
-   - Dynamic proof (running a PoC) only in a **sandbox with no secrets and no network** — never in the job holding the review token.
-   - **Dedup** by fingerprint (category + file + code-snippet hash, not line numbers). Human-dismissed findings stay dismissed unless the code changed.
-   - **Disclosure:** exploitable findings go to a private channel (GitHub Security Advisory); the PR gets a generic "security check failed".
-4. **Mark complete.** Check run per commit SHA. Confirmed + high **blocks**; the rest is advisory. Any finding **raises the PR's risk** (→ more humans). **Fails closed** for medium+ risk if the flow errors or times out.
-
-Cost: full flow when floors mark the PR security-relevant; a light pass otherwise.
-
----
-
-## L7 — Human approval ⬜
+## L6 — Human approval ⬜
 
 **Count by risk:** low = 0, medium = 1, high = 2. GitHub has one approvals number per branch, so a **custom required check** reads the risk (set only by the bot, recomputed on every push) and counts approvals.
 
@@ -215,7 +172,7 @@ Cost: full flow when floors mark the PR security-relevant; a light pass otherwis
 
 ---
 
-## L8 — After merge: telemetry and internal use ⬜
+## L7 — After merge: telemetry and internal use ⬜
 
 **Review is not the last line of defense.** Regressions should surface fast after merge, through:
 - **Telemetry:** error rates, latency, 5xx by endpoint, business signals (e.g. revenue report totals moving unexpectedly). Alert on change, not only on thresholds.
@@ -237,7 +194,7 @@ Not applicable to orders-service yet (no deploy target); designed for when there
 | Job | Trigger | Runs PR code? | Secrets |
 |---|---|---|---|
 | lint, test, build | `pull_request` | yes | none |
-| issue check, risk, AI review, security | `pull_request_target` | **never** — diff read as data | review token only |
+| issue check, risk, AI review | `pull_request_target` | **never** — diff read as data | review token only |
 
 - `pull_request` takes the workflow file **from the PR branch** — a PR could edit the review to `exit 0`.
 - `pull_request_target` takes it from `main` and has secrets — so checking out and running PR code there is the classic **"pwn request"**.
@@ -263,6 +220,7 @@ Not applicable to orders-service yet (no deploy target); designed for when there
 - **Eval set from reality:** every revert or incident points to a PR the pipeline missed → replay its diff, expect a finding. Plus classifier/verifier disagreements (human-labeled).
 - **Prompts, `REVIEW.md`, tool lists and model IDs are code.** A PR changing any of them must pass the eval before merge.
 - **Pin model IDs, never aliases.** An alias (e.g. `model: haiku` in `.claude/agents/diff-reviewer.md` today) silently moves to a new version — the reviewer changes and nobody rescores.
+- **Same issue, two verdicts:** a token-exposure finding got "non-blocking" on one run and "blocking" on the next; the only change between them was documenting the gap. LLM verdicts are non-deterministic and documenting a risk can make it *more* salient. Hence: one stored verdict per SHA, a human override path for blocking checks, and a `REVIEW.md` rule for how documented trade-offs are graded.
 - **Metrics:** recall on known misses; precision from the human dismiss rate; format adherence (count-first summary, `file:line` on every finding — Haiku once printed "5 findings" over a list of 6).
 
 ---
@@ -284,7 +242,6 @@ Not applicable to orders-service yet (no deploy target); designed for when there
 | Where do review tokens live? | An Environment locked to `main`, used by a `pull_request_target` job. Repo secrets are readable by anyone who can push a branch. |
 | Two runs, two verdicts? | LLM verdicts are non-deterministic: store one per SHA, give blocking checks a human override, define how documented trade-offs are graded. |
 | Can a bot approve? | Never. Comments and checks only; stale approvals dismissed on new commits. |
-| Security findings on a public repo? | Private advisory, not inline comments — publishing is disclosure. |
-| Fail open or closed? | Open where nothing is at stake (local hook on every command); closed for security on medium+ risk. |
+| Fail open or closed? | Open where nothing is at stake (local hook on every command); closed where a miss is expensive. |
 | What decides how strict review is? | Blast radius: reversibility, data at stake, dependents, how fast a failure would be noticed. Expensive code gets more people and more checks. |
 | Isn't review the last line of defense? | No — telemetry, dogfooding and rollback catch what review misses. Fast detection lets reversible changes take a lighter bar; every regression found becomes an eval case. |
