@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 
+from review.diff import parse_diff
 from review.reviewer import ReviewResult, summarize
 from review.rounds import Marker, RoundPlan, format_marker
 
@@ -18,7 +19,6 @@ _SECRETS = [
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 ]
-_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 RISK_LABELS = ("risk:low", "risk:medium", "risk:high")
 
 
@@ -33,18 +33,9 @@ def find_secrets(text: str) -> list[str]:
 def commentable_lines(diff: str) -> dict[str, set[int]]:
     """New-side line numbers GitHub accepts inline comments on (added or context lines)."""
     lines: dict[str, set[int]] = {}
-    path, n = None, 0
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            name = line[4:]
-            path = None if name == "/dev/null" else name.removeprefix("b/")
-        elif line.startswith("--- ") or line.startswith("diff "):
-            continue
-        elif match := _HUNK.match(line):
-            n = int(match.group(1))
-        elif path and line[:1] in (" ", "+"):
-            lines.setdefault(path, set()).add(n)
-            n += 1
+    for line in parse_diff(diff)[1]:
+        if line.new_line is not None:
+            lines.setdefault(line.path, set()).add(line.new_line)
     return lines
 
 

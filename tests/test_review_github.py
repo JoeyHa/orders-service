@@ -100,3 +100,8 @@ def test_a_secret_anywhere_in_the_payload_stops_posting():
 def test_risk_labels():
     assert risk_labels("high", needs_human=False) == ["risk:high"]
     assert risk_labels("low", needs_human=True) == ["risk:low", "needs-human"]
+
+
+def test_header_lookalike_lines_keep_line_numbers_in_step():
+    d = "--- a/app.py\n+++ b/app.py\n@@ -1,1 +1,3 @@\n keep\n+++ x\n+after\n"
+    assert commentable_lines(d) == {"app.py": {1, 2, 3}}

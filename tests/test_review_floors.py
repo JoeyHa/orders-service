@@ -65,3 +65,31 @@ def test_each_rule_is_reported_once_per_file():
     d = diff("app/x.py", "+a.with_for_update()", "+b.with_for_update()")
     _, reasons = apply_floors(d, FLOORS)
     assert len(reasons) == 1
+
+
+def test_added_line_that_looks_like_a_header_is_still_content():
+    # "+++ x" inside a hunk is an added line starting with "++ ", not a file header
+    d = (
+        "--- a/app/x.py\n+++ b/app/x.py\n@@ -1,1 +1,3 @@\n keep\n"
+        "+++ stmt.with_for_update()\n"
+        "+-- ALTER TABLE orders\n"
+    )
+    level, reasons = apply_floors(d, FLOORS)
+    assert level == "medium"
+    assert {r.split(":")[0] for r in reasons} == {"app/x.py"}
+
+
+def test_pure_rename_without_content_change_hits_path_floor():
+    d = (
+        "diff --git a/app/auth.py b/app/security.py\n"
+        "similarity index 100%\nrename from app/auth.py\nrename to app/security.py\n"
+    )
+    assert apply_floors(d, FLOORS)[0] == "medium"
+
+
+def test_empty_or_mode_only_change_hits_path_floor():
+    d = (
+        "diff --git a/.github/workflows/x.yml b/.github/workflows/x.yml\n"
+        "new file mode 100644\nindex 0000000..e69de29\n"
+    )
+    assert apply_floors(d, FLOORS)[0] == "high"
