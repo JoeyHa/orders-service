@@ -48,6 +48,11 @@ def test_symlink_escaping_the_checkout_is_denied(root):
     assert decide(root, "Read", file_path="innocent.md") == "deny"
 
 
+def test_structured_output_tool_is_allowed(root):
+    # the SDK returns the final answer through this tool; blocking it blocks the answer
+    assert decide(root, "StructuredOutput", level="low", reasons=[]) == "allow"
+
+
 @pytest.mark.parametrize("tool", ["Bash", "Write", "Edit", "WebFetch", "Agent", "SomeFutureTool"])
 def test_every_other_tool_is_denied(root, tool):
     assert decide(root, tool, command="cat /proc/self/environ", file_path="app.py") == "deny"

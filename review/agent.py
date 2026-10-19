@@ -13,6 +13,7 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, ResultMessage, que
 from pydantic import BaseModel, ValidationError
 
 READ_TOOLS = ("Read", "Grep", "Glob")
+ANSWER_TOOL = "StructuredOutput"  # the SDK returns output_format results through this tool
 DENIED_TOOLS = ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Agent", "Task"]
 
 
@@ -33,6 +34,8 @@ def make_guard(root: Path):
 
     async def guard(input_data, tool_use_id, context):
         tool = input_data.get("tool_name")
+        if tool == ANSWER_TOOL:
+            return {}
         args = input_data.get("tool_input") or {}
         targets = [args.get("file_path") or args.get("path")]
         if tool == "Glob":
