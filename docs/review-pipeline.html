@@ -193,11 +193,11 @@ tr:last-child td { border-bottom: 0; }
       <div class="arrow"></div>
       <div class="node det"><span class="tag">required</span><div class="t">L3 · CI: lint · test · build <span class="st built">built</span></div><div class="d">AI layers start only after these are green</div></div>
       <div class="arrow"></div>
-      <div class="node llm"><div class="t">L4 · Risk: floors → classifier → verifier <span class="st planned">designed</span></div><div class="d">Blast radius decides review depth and human count</div></div>
+      <div class="node llm"><div class="t">L4 · Risk: floors → classifier → verifier <span class="st built">built</span></div><div class="d">Blast radius decides review depth and human count</div></div>
       <div class="arrow"></div>
-      <div class="node llm"><div class="t">L5 · AI code review <span class="st planned">designed</span></div><div class="d">Quick / Standard / Deep by risk</div></div>
+      <div class="node llm"><div class="t">L5 · AI code review <span class="st built">built</span></div><div class="d">Quick / Standard / Deep by risk</div></div>
       <div class="arrow"></div>
-      <div class="node human"><span class="tag">never a bot</span><div class="t">L6 · Human approval <span class="st planned">designed</span></div><div class="d">0 / 1 / 2 approvers by risk · stale approvals dismissed</div></div>
+      <div class="node human"><span class="tag">never a bot</span><div class="t">L6 · Human approval <span class="st built">built</span></div><div class="d">0 / 1 / 2 approvers by risk · stale approvals dismissed</div></div>
       <div class="arrow"></div>
       <div class="node plain"><div class="t"><code>main</code></div></div>
       <div class="arrow"></div>
@@ -221,13 +221,13 @@ tr:last-child td { border-bottom: 0; }
     <div class="card"><div class="h"><b>L3 · CI checks</b><span class="st built">built</span></div>
       <p><code>lint</code>, <code>test</code> (Postgres, <code>alembic check</code>), <code>build</code>. Required by branch protection. Runs PR code, so it holds no secrets.</p>
       <p class="why">Never spend tokens reviewing code that doesn't build. Cost: review latency now includes CI time.</p></div>
-    <div class="card"><div class="h"><b>L4 · Risk</b><span class="st planned">designed</span></div>
+    <div class="card"><div class="h"><b>L4 · Risk</b><span class="st built">built</span></div>
       <p>Owner-defined floors from <code>REVIEW.md</code> (read from <code>main</code>), then a cheap classifier, then a blind adversarial verifier on anything still "low".</p>
       <p class="why">A wrong "low" ships unreviewed risky code; a wrong "high" wastes time. Effort goes where the error is expensive.</p></div>
-    <div class="card"><div class="h"><b>L5 · AI code review</b><span class="st planned">designed</span></div>
-      <p>Diff + issue + <code>CLAUDE.md</code> + <code>REVIEW.md</code> + touched files. Findings ranked important / nit / pre-existing, each with <code>file:line</code>. Checks issue fit and <code>CLAUDE.md</code> drift.</p>
+    <div class="card"><div class="h"><b>L5 · AI code review</b><span class="st built">built</span></div>
+      <p>Diff + issue + <code>CLAUDE.md</code> + <code>REVIEW.md</code> + touched files. Findings ranked blocking / important / nit / pre-existing, each with <code>file:line</code>; evidence is verified in code before posting, and the count is computed, not trusted. Runs sandboxed: reads only inside the PR checkout, no config from the PR, no repo token in its environment.</p>
       <p class="why">Pre-existing never blocks, nits are capped, documented decisions are not re-raised — repeated noise is why teams start ignoring reviewers.</p></div>
-    <div class="card"><div class="h"><b>L6 · Human approval</b><span class="st planned">designed</span></div>
+    <div class="card"><div class="h"><b>L6 · Human approval</b><span class="st built">built</span></div>
       <p>0 / 1 / 2 approvers by risk via a custom required check. Bots comment, never approve. Stale approvals dismissed; most recent push must be approved.</p>
       <p class="why">Compliance may require a second person on every change — "low" may mean "approve", not "review deeply".</p></div>
     <div class="card"><div class="h"><b>L7 · After merge</b><span class="st planned">designed</span></div>

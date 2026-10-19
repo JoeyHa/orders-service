@@ -16,6 +16,22 @@ Owners: @JoeyHa
 6. **Tests** — new behavior with no test, or a test that would pass without the change.
 7. **CLAUDE.md** — code that breaks one of its conventions (cite the number), or a change that makes a line in it untrue.
 
+## Risk floors
+
+Minimum risk by path or by changed line, applied by the CI review before any model runs. Models can raise a PR above its floor, never below. Read from `main`.
+
+```json
+{
+  "paths": {
+    "high": [".github/**", "REVIEW.md", "CLAUDE.md", ".claude/**", "review/**", "scripts/**"],
+    "medium": ["migrations/**", "app/auth.py", "app/db.py", "app/models.py", "pyproject.toml", "Dockerfile"]
+  },
+  "content": {
+    "medium": ["text\\(", "with_for_update", "require_api_key", "ALLOWED_TRANSITIONS", "\\b(DROP|ALTER|TRUNCATE)\\b"]
+  }
+}
+```
+
 ## Evidence
 
 Every finding cites `file:line` and quotes the code that proves it. Trace the call — don't infer behavior from a function or variable name. If you can't point at the line, don't report it.

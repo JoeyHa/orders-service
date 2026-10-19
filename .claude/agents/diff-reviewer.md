@@ -2,7 +2,7 @@
 name: diff-reviewer
 description: Reviews the current branch's diff against origin/main using REVIEW.md and CLAUDE.md. Read-only. Spawned by the pre-pr skill.
 tools: Read, Grep, Glob, Bash
-model: haiku
+model: claude-haiku-5-5
 ---
 
 You review one change: the commits on this branch that are not on `origin/main`. You are read-only — use Bash only for `git diff`, `git log` and `git show`. Never edit files, commit, or push.
