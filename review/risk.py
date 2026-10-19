@@ -128,7 +128,8 @@ async def decide_risk(diff, floors, *, pr_text, root, run=run_structured) -> Ris
         decision.level = second.level
         proof = "; ".join(second.evidence)
         decision.reasons += [
-            Reason(second.level, "", "verifier", "", r, proof) for r in second.reasons
+            Reason(second.level, "", "verifier", "", r, proof)
+            for r in second.reasons or ["(no reason given)"]  # never drop the evidence
         ]
     elif second.level != "low":
         decision.reasons.append(Reason(

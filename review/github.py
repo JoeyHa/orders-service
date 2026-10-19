@@ -13,6 +13,7 @@ from review.diff import parse_diff
 from review.reviewer import ReviewResult, summarize
 from review.risk import Reason
 from review.rounds import Marker, RoundPlan, format_marker
+from review.schema import SEVERITY_MEANING
 
 _SECRETS = [
     re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
@@ -44,12 +45,13 @@ def commentable_lines(diff: str) -> dict[str, set[int]]:
     return lines
 
 
-def code_span(text: str) -> str:
-    """Code span safe inside a table cell; diff text is author-controlled and must not escape."""
+def code_span(text: str, *, table: bool = True) -> str:
+    """Code span that author-controlled text cannot close early; table cells get stricter rules."""
     text = text.replace("\r", "\\r").replace("\n", "\\n")  # a line break ends the span
-    if len(text) > MAX_CODE_CHARS:
-        text = text[:MAX_CODE_CHARS] + "…"
-    text = text.replace("|", "\\|")  # GitHub splits table cells on | even inside code
+    if table:
+        if len(text) > MAX_CODE_CHARS:
+            text = text[:MAX_CODE_CHARS] + "…"
+        text = text.replace("|", "\\|")  # GitHub splits table cells on | even inside code
     if "`" not in text:
         return f"`{text}`"
     fence = "`" * (max(len(run) for run in re.findall(r"`+", text)) + 1)
@@ -98,7 +100,7 @@ def build_review(
     on_diff = commentable_lines(diff)
     inline = [
         {"path": f.file, "line": f.line, "side": "RIGHT",
-         "body": f"**{f.severity}**: {f.why}\n\n{code_span(f.evidence)}"}
+         "body": f"**{f.severity}**: {f.why}\n\n{code_span(f.evidence, table=False)}"}
         for f in result.findings if f.line in on_diff.get(f.file, set())
     ]  # fmt: skip
 
@@ -124,12 +126,14 @@ def build_review(
     parts += _risk_section(result.risk_level, risk_reasons)
     parts.append("### Findings")
     if result.findings:
+        ranked = sorted(result.findings, key=lambda f: list(SEVERITY_MEANING).index(f.severity))
         rows = [
             f"| {f.severity} | {code_span(f'{f.file}:{f.line}')} | {_cell(f.why)} "
             f"| {code_span(f.evidence)} |"
-            for f in result.findings
+            for f in ranked
         ]
         parts.append(_table("| Severity | Where | Why | Evidence |", rows))
+        parts.append(" · ".join(f"**{s}**: {m}" for s, m in SEVERITY_MEANING.items()))
     else:
         parts.append("None.")
     if result.escalated:

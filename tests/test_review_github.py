@@ -63,7 +63,7 @@ def test_body_starts_with_marker_then_count_and_round_trips():
     payload = build(result(finding(11, "blocking")))
     marker = parse_markers([{"user": {"login": "github-actions[bot]"}, "body": payload["body"]}])
     assert marker[0].sha == "abc123" and marker[0].verdict == "block"
-    assert "1 findings (1 blocking)" in payload["body"]
+    assert "1 finding: 1 blocking" in payload["body"]
 
 
 def test_failed_review_says_so_and_blocks():
@@ -179,7 +179,7 @@ def test_findings_table_lists_every_finding():
 
 def test_blocking_findings_mark_the_summary():
     body = build(result(finding(11, "blocking")))["body"]
-    assert "| ❌ 1 findings (1 blocking) |" in body
+    assert "| ❌ 1 finding: 1 blocking |" in body
 
 
 @pytest.mark.parametrize(
@@ -193,3 +193,25 @@ def test_blocking_findings_mark_the_summary():
 )
 def test_code_span_cannot_be_broken_by_diff_text(text, expected):
     assert code_span(text) == expected
+
+
+def test_findings_are_sorted_by_rank_with_a_legend():
+    body = build(result(finding(11, "nit"), finding(12, "blocking"), finding(13, "important")))[
+        "body"
+    ]
+    rows = [line.split(" | ")[0] for line in body.splitlines() if line.startswith("| ")]
+    assert [r for r in rows if r in ("| blocking", "| important", "| nit")] == [
+        "| blocking", "| important", "| nit",
+    ]  # fmt: skip
+    assert "**blocking**: must be fixed before merge" in body
+
+
+def test_no_legend_without_findings():
+    body = build(ReviewResult(depth="quick", risk_level="low", findings=[]))["body"]
+    assert "must be fixed before merge" not in body
+
+
+def test_inline_evidence_is_neither_truncated_nor_pipe_escaped():
+    long = "a | b" + "x" * 300
+    f = Finding(file="app.py", line=11, severity="important", evidence=long, why="w")
+    assert build(result(f))["comments"][0]["body"].endswith(f"`{long}`")

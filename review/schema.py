@@ -7,6 +7,13 @@ from pydantic import BaseModel, Field
 Level = Literal["low", "medium", "high"]
 Severity = Literal["blocking", "important", "nit", "pre-existing"]
 LEVELS: tuple[Level, ...] = ("low", "medium", "high")
+# rank order, most severe first; the model's prompt and the PR report both quote these
+SEVERITY_MEANING: dict[Severity, str] = {
+    "blocking": "must be fixed before merge",
+    "important": "should be fixed",
+    "nit": "style or small polish",
+    "pre-existing": "a real problem the PR did not introduce (never blocks)",
+}
 
 
 def max_level(*levels: Level) -> Level:

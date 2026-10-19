@@ -106,3 +106,10 @@ def test_oversized_diff_gets_a_deterministic_floor():
     d = decide(big, run)
     assert d.level == "medium"
     assert run.calls == []
+
+
+def test_verifier_evidence_without_reasons_is_still_recorded():
+    run = FakeRun(verdict("low"), verdict("medium", [], ["app/api/orders.py:66"]))
+    d = decide(DOCS_DIFF, run)
+    assert d.level == "medium"
+    assert [(r.kind, r.proof) for r in d.reasons] == [("verifier", "app/api/orders.py:66")]
