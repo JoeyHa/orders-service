@@ -123,7 +123,7 @@ async def test_refunded_is_final(client, auth, user_id, target):
     order = await make_order(client, auth, user_id)
     url = f"/orders/{order['id']}"
     for step in ["paid", "refunded"]:
-        await client.patch(url, json={"status": step}, headers=auth)
+        assert (await client.patch(url, json={"status": step}, headers=auth)).status_code == 200
     r = await client.patch(url, json={"status": target}, headers=auth)
     assert r.status_code == 409
 
