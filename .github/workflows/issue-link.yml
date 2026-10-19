@@ -1,6 +1,7 @@
 name: Issue Link
 
 # Review pipeline L2: block PRs without a linked, open, authorized issue.
+# Policy (.github/maintainers.txt) and the script come from main, like this file.
 # pull_request_target runs this file and the script from main, so a PR cannot edit its own check.
 # Safe because PR code is never checked out or run here; the PR is only queried through the API.
 
@@ -18,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # main, not the PR
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # script needs 3.10+; don't depend on the runner's default
 
       - name: Check linked issue
         env:
@@ -33,8 +37,17 @@ jobs:
                   pullRequest(number: $number) {
                     author { login }
                     labels(first: 50) { nodes { name } }
+                    timelineItems(itemTypes: [LABELED_EVENT], last: 100) {
+                      nodes { ... on LabeledEvent { label { name } actor { login } } }
+                    }
                     closingIssuesReferences(first: 20) {
-                      nodes { number state author { login } labels(first: 50) { nodes { name } } }
+                      nodes {
+                        number state author { login }
+                        labels(first: 50) { nodes { name } }
+                        timelineItems(itemTypes: [LABELED_EVENT], last: 100) {
+                          nodes { ... on LabeledEvent { label { name } actor { login } } }
+                        }
+                      }
                     }
                   }
                 }

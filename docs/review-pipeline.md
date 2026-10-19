@@ -65,18 +65,20 @@ L7  Telemetry · internal use · rollback ── regressions feed the eval set �
 
 **What:** `.github/workflows/issue-link.yml` fetches the PR's `closingIssuesReferences` via GraphQL; `scripts/check_issue_link.py` decides. No linked, open, authorized issue → blocked. Runs on `pull_request_target` (script from `main`, PR code never checked out). No LLM.
 
+**Solo repo:** separation of duties needs two people. With one maintainer, every PR is self-authored, so each one needs a visible, logged `break-glass` — the exception is made visible instead of hidden.
+
 **Not yet required:** becomes a required check once the first real PR confirms the `pull_request_target` check attaches to the PR.
 
 **Why:** compliance (SOC 2 change management): every production change traces to an authorized request.
 
 **Rules:**
-- The issue must be **open** and **authorized** — created by someone other than the PR author, or labeled `approved`. A link alone proves traceability, not authorization (anyone can open an empty issue).
+- The issue must be **open** and **authorized** — created by, or labeled `approved` by, someone other than the PR author. Who applied a label comes from the issue timeline (`LabeledEvent.actor`); an unknown actor never counts. A link alone proves traceability, not authorization (anyone can open an empty issue).
 - **Exemptions are audited, never silent:**
 
 | Case | Handling |
 |---|---|
 | Dependabot / Renovate | exempt by bot author; scanners still run |
-| Incident hotfix | `break-glass` label, logged as a warning, issue required after the fact |
+| Incident hotfix | `break-glass` label applied by a maintainer (`.github/maintainers.txt`, read from `main`), logged as a warning naming who applied it, issue required after the fact |
 | Revert | link the original PR's issue, or break-glass |
 
 **Where the AI comes in:** not here. L5 checks that the diff actually satisfies the issue's acceptance criteria and flags scope creep.

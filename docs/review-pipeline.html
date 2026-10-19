@@ -216,7 +216,7 @@ tr:last-child td { border-bottom: 0; }
       <p><code>/pre-pr</code> skill: lint, tests, Docker build, then the <code>diff-reviewer</code> agent (Haiku, read-only). A Claude Code hook blocks <code>gh pr create</code> until a PASS exists for HEAD.</p>
       <p class="why">Shrinks the loop, doesn't enforce. A local finding costs seconds; in CI it costs a public comment, a push, a rerun and a notification. CI never trusts the local marker.</p></div>
     <div class="card"><div class="h"><b>L2 · Issue-link check</b><span class="st built">built</span></div>
-      <p><code>check_issue_link.py</code> on <code>closingIssuesReferences</code>, via <code>pull_request_target</code> (script from <code>main</code>). No linked, open, authorized issue → blocked. Bots and <code>break-glass</code> are exempt and logged.</p>
+      <p><code>check_issue_link.py</code> on <code>closingIssuesReferences</code>, via <code>pull_request_target</code> (script from <code>main</code>). No linked, open issue created or <code>approved</code> by someone other than the author → blocked. Bots, and <code>break-glass</code> applied by a maintainer, are exempt and logged.</p>
       <p class="why">SOC 2 change management: every change traces to an authorized request. A link proves traceability; authorization needs someone other than the author.</p></div>
     <div class="card"><div class="h"><b>L3 · CI checks</b><span class="st built">built</span></div>
       <p><code>lint</code>, <code>test</code> (Postgres, <code>alembic check</code>), <code>build</code>. Required by branch protection. Runs PR code, so it holds no secrets.</p>
