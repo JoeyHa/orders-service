@@ -33,7 +33,7 @@ Minimum risk by path or by changed line, applied by the CI review before any mod
     ".github/**": "CI and review workflows; a change can switch off checks or expose secrets",
     "REVIEW.md": "the review policy itself, including these floors",
     "CLAUDE.md": "instructions every AI reviewer follows",
-    ".claude/**": "local review skill, diff-reviewer agent and the PR gate hook",
+    ".claude/**": "local review skill, diff-reviewer-local agent and the PR gate hook",
     "review/**": "the CI reviewer's own code",
     "scripts/**": "the PR gate and issue-link checks",
     "migrations/**": "schema changes run against live data and are hard to undo",

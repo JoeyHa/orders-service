@@ -213,7 +213,7 @@ tr:last-child td { border-bottom: 0; }
   <p class="section-sub">What each layer does, and the reason it exists.</p>
   <div class="cards">
     <div class="card"><div class="h"><b>L1 · Local pre-PR</b><span class="st built">built</span></div>
-      <p><code>/pre-pr</code> skill: lint, tests, Docker build, then the <code>diff-reviewer</code> agent (Haiku, read-only). A Claude Code hook blocks <code>gh pr create</code> until a PASS exists for HEAD.</p>
+      <p><code>/pre-pr</code> skill: lint, tests, Docker build, then the <code>diff-reviewer-local</code> agent (Haiku, read-only). A Claude Code hook blocks <code>gh pr create</code> until a PASS exists for HEAD.</p>
       <p class="why">Shrinks the loop, doesn't enforce. A local finding costs seconds; in CI it costs a public comment, a push, a rerun and a notification. CI never trusts the local marker.</p></div>
     <div class="card"><div class="h"><b>L2 · Issue-link check</b><span class="st built">built</span></div>
       <p><code>check_issue_link.py</code> on <code>closingIssuesReferences</code>, via <code>pull_request_target</code> (script from <code>main</code>). No linked, open issue created or <code>approved</code> by someone other than the author → blocked. Bots, and <code>break-glass</code> applied by a maintainer, are exempt and logged.</p>

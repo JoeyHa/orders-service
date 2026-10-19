@@ -47,7 +47,7 @@ L7  Telemetry · internal use · rollback ── regressions feed the eval set �
 
 ## L1 — Local pre-PR review ✅
 
-**What:** the `/pre-pr` skill runs lint, tests and a Docker build, then spawns the `diff-reviewer` agent (Haiku, read-only tools) on `origin/main...HEAD`. The result is written to `.git/pre-pr-review` keyed to the HEAD SHA. A Claude Code `PreToolUse` hook (`scripts/claude-pre-pr-gate.sh`) blocks `gh pr create` until it passes for that SHA.
+**What:** the `/pre-pr` skill runs lint, tests and a Docker build, then spawns the `diff-reviewer-local` agent (Haiku, read-only tools) on `origin/main...HEAD`. The result is written to `.git/pre-pr-review` keyed to the HEAD SHA. A Claude Code `PreToolUse` hook (`scripts/claude-pre-pr-gate.sh`) blocks `gh pr create` until it passes for that SHA.
 
 **Why:** shrink the loop, not enforce. A finding caught locally is fixed in seconds by someone who still has the context; the same finding in CI becomes a public comment, another push, another review run, another notification.
 
@@ -237,7 +237,7 @@ Not applicable to orders-service yet (no deploy target); designed for when there
 
 - **Eval set from reality:** every revert or incident points to a PR the pipeline missed → replay its diff, expect a finding. Plus classifier/verifier disagreements (human-labeled).
 - **Prompts, `REVIEW.md`, tool lists and model IDs are code.** A PR changing any of them must pass the eval before merge.
-- **Pin model IDs, never aliases.** An alias (e.g. `model: haiku`, which `.claude/agents/diff-reviewer.md` used before it was pinned) silently moves to a new version — the reviewer changes and nobody rescores.
+- **Pin model IDs, never aliases.** An alias (e.g. `model: haiku`, which `.claude/agents/diff-reviewer.md` used before it was pinned and renamed) silently moves to a new version — the reviewer changes and nobody rescores.
 - **Same issue, two verdicts:** a token-exposure finding got "non-blocking" on one run and "blocking" on the next; the only change between them was documenting the gap. LLM verdicts are non-deterministic and documenting a risk can make it *more* salient. Hence: one stored verdict per SHA, a human override path for blocking checks, and a `REVIEW.md` rule for how documented trade-offs are graded.
 - **Metrics:** recall on known misses; precision from the human dismiss rate; format adherence (count-first summary, `file:line` on every finding — Haiku once printed "5 findings" over a list of 6).
 
