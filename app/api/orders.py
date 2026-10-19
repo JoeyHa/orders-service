@@ -1,24 +1,23 @@
 from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 
 from app.auth import require_api_key
 from app.db import SessionDep
-from app.models import Order, User
+from app.models import INT4_MAX, Order, User
 
 router = APIRouter(tags=["orders"])
 
 OrderStatus = Literal["pending", "paid", "cancelled"]
 ALLOWED_TRANSITIONS = {("pending", "paid"), ("pending", "cancelled")}
-INT4_MAX = 2_147_483_647
 
 
 class OrderIn(BaseModel):
-    user_id: int
+    user_id: int = Field(ge=1, le=INT4_MAX)
     amount_cents: int = Field(ge=0, le=INT4_MAX)
 
 
@@ -51,7 +50,9 @@ async def create_order(body: OrderIn, session: SessionDep) -> Order:
 
 
 @router.get("/orders", response_model=list[OrderOut])
-async def list_orders(session: SessionDep, user_id: int | None = None) -> Sequence[Order]:
+async def list_orders(
+    session: SessionDep, user_id: Annotated[int | None, Query(ge=1, le=INT4_MAX)] = None
+) -> Sequence[Order]:
     stmt = select(Order).order_by(Order.id)
     if user_id is not None:
         stmt = stmt.where(Order.user_id == user_id)
@@ -61,7 +62,9 @@ async def list_orders(session: SessionDep, user_id: int | None = None) -> Sequen
 @router.patch(
     "/orders/{order_id}", response_model=OrderOut, dependencies=[Depends(require_api_key)]
 )
-async def update_order(order_id: int, body: OrderPatch, session: SessionDep) -> Order:
+async def update_order(
+    order_id: Annotated[int, Path(ge=1, le=INT4_MAX)], body: OrderPatch, session: SessionDep
+) -> Order:
     # row lock held until commit, so concurrent transitions are serialized
     order = await session.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None:

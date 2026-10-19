@@ -3,6 +3,8 @@ from datetime import datetime
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+INT4_MAX = 2_147_483_647  # Postgres integer column max; bound API ints to this
+
 
 class Base(DeclarativeBase):
     pass

@@ -18,7 +18,7 @@ Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16
 3. Raw SQL only via `sqlalchemy.text()` with bound parameters. Never build SQL with f-strings, `%` or `.format()`.
 4. Order status changes check `ALLOWED_TRANSITIONS` and read the row with `with_for_update()` in the same transaction.
 5. Schema changes ship a model change and a new migration in the same PR. Never edit a migration already on `main`. `alembic check` must stay clean.
-6. Money is integer cents (`amount_cents`), bounded to Postgres int4 at the API (`Field(ge=0, le=INT4_MAX)`).
+6. Money is integer cents (`amount_cents`). Every int that reaches Postgres (ids, `amount_cents`) is bounded to int4 at the API with `INT4_MAX` from `app/models.py`.
 7. Errors are `HTTPException` with an explicit status; unique violations map to 409, missing rows to 404. No 500s for bad input.
 8. Config comes only from env through `app/config.py`. Secrets have no defaults.
 9. Tests hit real Postgres; no DB mocks. Every new endpoint behavior gets a test.
