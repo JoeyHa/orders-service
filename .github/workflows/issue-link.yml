@@ -1,0 +1,43 @@
+name: Issue Link
+
+# Review pipeline L2: block PRs without a linked, open, authorized issue.
+# pull_request_target runs this file and the script from main, so a PR cannot edit its own check.
+# Safe because PR code is never checked out or run here; the PR is only queried through the API.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  issue-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # main, not the PR
+
+      - name: Check linked issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # shellcheck disable=SC2016 # $owner etc. are GraphQL variables, not shell
+          gh api graphql \
+            -f owner="${GITHUB_REPOSITORY%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -F number="$PR_NUMBER" \
+            -f query='
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    author { login }
+                    labels(first: 50) { nodes { name } }
+                    closingIssuesReferences(first: 20) {
+                      nodes { number state author { login } labels(first: 50) { nodes { name } } }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest' \
+          | python3 scripts/check_issue_link.py

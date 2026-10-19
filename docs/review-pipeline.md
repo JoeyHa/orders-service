@@ -61,20 +61,22 @@ L7  Telemetry · internal use · rollback ── regressions feed the eval set �
 
 ---
 
-## L2 — Issue-link check ⬜
+## L2 — Issue-link check ✅
 
-**What:** a script reads the PR's `closingIssuesReferences` from the GitHub API. No linked issue → blocked. Required check; runs first; no LLM.
+**What:** `.github/workflows/issue-link.yml` fetches the PR's `closingIssuesReferences` via GraphQL; `scripts/check_issue_link.py` decides. No linked, open, authorized issue → blocked. Runs on `pull_request_target` (script from `main`, PR code never checked out). No LLM.
+
+**Not yet required:** becomes a required check once the first real PR confirms the `pull_request_target` check attaches to the PR.
 
 **Why:** compliance (SOC 2 change management): every production change traces to an authorized request.
 
 **Rules:**
-- The issue must be **open** and **authorized** — created by, or labeled `approved` by, someone other than the PR author. A link alone proves traceability, not authorization (anyone can open an empty issue).
+- The issue must be **open** and **authorized** — created by someone other than the PR author, or labeled `approved`. A link alone proves traceability, not authorization (anyone can open an empty issue).
 - **Exemptions are audited, never silent:**
 
 | Case | Handling |
 |---|---|
 | Dependabot / Renovate | exempt by bot author; scanners still run |
-| Incident hotfix | `break-glass` label (maintainers only), logged, issue required within N hours |
+| Incident hotfix | `break-glass` label, logged as a warning, issue required after the fact |
 | Revert | link the original PR's issue, or break-glass |
 
 **Where the AI comes in:** not here. L5 checks that the diff actually satisfies the issue's acceptance criteria and flags scope creep.
