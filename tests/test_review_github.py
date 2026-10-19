@@ -3,11 +3,13 @@ import pytest
 from review.github import (
     SecretLeak,
     build_review,
+    code_span,
     commentable_lines,
     find_secrets,
     risk_labels,
 )
 from review.reviewer import ReviewResult
+from review.risk import Reason
 from review.rounds import RoundPlan, parse_markers
 from review.schema import Finding
 
@@ -32,7 +34,7 @@ def result(*findings, **kw):
 
 
 def build(r, **kw):
-    args = dict(head_sha="abc123", plan=RoundPlan("full", 1), risk_reasons=["r1"], diff=DIFF)
+    args = dict(head_sha="abc123", plan=RoundPlan("full", 1), risk_reasons=[], diff=DIFF)
     return build_review(r, **(args | kw))
 
 
@@ -61,7 +63,7 @@ def test_body_starts_with_marker_then_count_and_round_trips():
     payload = build(result(finding(11, "blocking")))
     marker = parse_markers([{"user": {"login": "github-actions[bot]"}, "body": payload["body"]}])
     assert marker[0].sha == "abc123" and marker[0].verdict == "block"
-    assert "1 findings (1 blocking)" in payload["body"]
+    assert "1 finding: 1 blocking" in payload["body"]
 
 
 def test_failed_review_says_so_and_blocks():
@@ -134,3 +136,134 @@ def test_label_removal_404_is_fine(monkeypatch):
 
     monkeypatch.setattr(github.subprocess, "run", fake_run)
     github.set_labels("o/r", 1, ["risk:high"])
+
+
+HIGH = Reason("high", "CLAUDE.md", "path", "CLAUDE.md", "steers the reviewer")
+MEDIUM = Reason("medium", "app/x.py:3", "line", "text\\(", "raw SQL", "+text('a | b')")
+
+
+@pytest.mark.parametrize(
+    "level,needed", [("low", "none"), ("medium", "1 human"), ("high", "2 humans")]
+)
+def test_summary_table_shows_findings_risk_approvals_and_cost(level, needed):
+    body = build(ReviewResult(depth="deep", risk_level=level, findings=[], cost_usd=0.26))["body"]
+    assert "## AI review · round 1 (full) · deep" in body
+    assert "| Findings | Risk | Approvals needed | Cost |" in body
+    assert f"| ✅ 0 findings — nothing to fix | {level} | {needed} | $0.26 |" in body.replace(
+        "🔴 ", ""
+    ).replace("🟡 ", "").replace("🟢 ", "")
+    assert "Risk sets the count by blast radius" in body
+
+
+def test_deciding_reasons_in_a_table_the_rest_collapsed():
+    r = ReviewResult(depth="deep", risk_level="high", findings=[])
+    body = build(r, risk_reasons=[HIGH, MEDIUM])["body"]
+    top, rest = body.split("<details>")
+    assert "### Why risk is high" in top
+    assert "| `CLAUDE.md` | path `CLAUDE.md` | steers the reviewer | file changed |" in top
+    assert "<summary>1 more reason (medium)</summary>" in rest
+    assert "| `app/x.py:3` | line `text\\(` | raw SQL | `+text('a \\| b')` |" in rest
+
+
+def test_no_reasons_says_nothing_matched():
+    body = build(ReviewResult(depth="quick", risk_level="low", findings=[]))["body"]
+    assert "No risk floor matched, and the risk models rated it low." in body
+
+
+def test_findings_table_lists_every_finding():
+    body = build(result(finding(11, "blocking"), finding(99, "pre-existing")))["body"]
+    assert "| Severity | Where | Why | Evidence |" in body
+    assert "| blocking | `app.py:11` | because | `x` |" in body
+    assert "| pre-existing | `app.py:99` | because | `x` |" in body
+
+
+def test_blocking_findings_mark_the_summary():
+    body = build(result(finding(11, "blocking")))["body"]
+    assert "| ❌ 1 finding: 1 blocking |" in body
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("+q = `x`", "`` +q = `x` ``"),
+        (".github/x\ny.yml", "`.github/x\\ny.yml`"),
+        ("a|b", "`a\\|b`"),
+        ("x" * 500, "`" + "x" * 120 + "…`"),
+    ],
+)
+def test_code_span_cannot_be_broken_by_diff_text(text, expected):
+    assert code_span(text) == expected
+
+
+def test_findings_are_sorted_by_rank_with_a_legend():
+    body = build(result(finding(11, "nit"), finding(12, "blocking"), finding(13, "important")))[
+        "body"
+    ]
+    rows = [line.split(" | ")[0] for line in body.splitlines() if line.startswith("| ")]
+    assert [r for r in rows if r in ("| blocking", "| important", "| nit")] == [
+        "| blocking", "| important", "| nit",
+    ]  # fmt: skip
+    assert "**blocking**: must be fixed before merge" in body
+
+
+def test_no_legend_without_findings():
+    body = build(ReviewResult(depth="quick", risk_level="low", findings=[]))["body"]
+    assert "must be fixed before merge" not in body
+
+
+def test_inline_evidence_is_neither_truncated_nor_pipe_escaped():
+    long = "a | b" + "x" * 300
+    f = Finding(file="app.py", line=11, severity="important", evidence=long, why="w")
+    assert build(result(f))["comments"][0]["body"].endswith(f"`{long}`")
+
+
+def test_escalation_is_named_as_the_reason_not_lower_reasons():
+    low = Reason("low", "", "verifier", "", "rated high without file:line evidence; ignored")
+    r = ReviewResult(depth="deep", risk_level="high", findings=[], escalated=True)
+    top = build(r, risk_reasons=[low])["body"].split("<details>")[0]
+    assert "A quick review found a blocking issue" in top.split("### Findings")[0]
+    assert "ignored" not in top
+
+
+def test_no_reason_at_the_level_is_said_plainly():
+    r = ReviewResult(depth="standard", risk_level="medium", findings=[])
+    body = build(r, risk_reasons=[Reason("low", "", "check", "", "minor")])["body"]
+    assert "No recorded reason at this level." in body
+
+
+def test_human_review_combines_both_rankings():
+    r = ReviewResult(depth="standard", risk_level="low", findings=[finding(11, "important")])
+    body = build(r)["body"]
+    assert "### Who must review" in body
+    assert "| Risk | 🟢 low | 0 |" in body
+    assert "| Findings | 1 important | 1 |" in body
+    assert "| **Required** | the higher of the two | **1** |" in body
+    assert "| 1 human |" in body.split("### Who must review")[0]  # summary agrees
+
+
+def test_nits_alone_need_no_human():
+    r = ReviewResult(depth="quick", risk_level="low", findings=[finding(11, "nit")])
+    assert "| Findings | 0 blocking or important | 0 |" in build(r)["body"]
+
+
+def test_marker_records_that_a_finding_needs_a_human():
+    assert "human=1 -->" in build(result(finding(11, "important")))["body"]
+    assert "human=0 -->" in build(result(finding(11, "nit")))["body"]
+
+
+def test_dropped_findings_never_show_a_green_check():
+    r = ReviewResult(depth="quick", risk_level="low", findings=[], unverified=[finding(11)])
+    assert "| ⚠️ 0 findings; 1 unverified" in build(r)["body"]
+
+
+def test_gh_failure_reports_github_s_error(monkeypatch):
+    import subprocess as sp
+
+    from review import github
+
+    def fake_run(cmd, **kw):
+        return sp.CompletedProcess(cmd, 1, "", "HTTP 422: Line could not be resolved")
+
+    monkeypatch.setattr(github.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError, match="Line could not be resolved"):
+        github.post_review("o/r", 1, {"body": "x"})

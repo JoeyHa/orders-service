@@ -1,5 +1,5 @@
 from review.policy import load_floors
-from review.risk import apply_floors
+from review.risk import Reason, apply_floors
 
 FLOORS = load_floors(
     """## Risk floors
@@ -7,7 +7,9 @@ FLOORS = load_floors(
 ```json
 {
   "paths": {"high": [".github/**", "REVIEW.md"], "medium": ["migrations/**", "app/auth.py"]},
-  "content": {"medium": ["with_for_update", "\\\\b(DROP|ALTER)\\\\b"]}
+  "content": {"medium": ["with_for_update", "\\\\b(DROP|ALTER)\\\\b"]},
+  "why": {".github/**": "runs CI", "REVIEW.md": "policy", "migrations/**": "schema",
+          "app/auth.py": "auth", "with_for_update": "locks rows", "\\\\b(DROP|ALTER)\\\\b": "ddl"}
 }
 ```
 """
@@ -29,7 +31,9 @@ def test_docs_only_change_is_low():
 def test_path_rule_sets_floor_with_reason():
     level, reasons = apply_floors(diff("migrations/versions/0002.py", "+x = 1"), FLOORS)
     assert level == "medium"
-    assert reasons == ["migrations/versions/0002.py matches migrations/** (medium)"]
+    assert reasons == [
+        Reason("medium", "migrations/versions/0002.py", "path", "migrations/**", "schema")
+    ]
 
 
 def test_highest_floor_wins():
@@ -47,7 +51,12 @@ def test_removed_line_triggers_content_rule():
     d = diff("app/api/orders.py", "-    stmt = stmt.with_for_update()", "+    stmt = stmt")
     level, reasons = apply_floors(d, FLOORS)
     assert level == "medium"
-    assert reasons == ["app/api/orders.py: changed line matches with_for_update (medium)"]
+    assert reasons == [
+        Reason(
+            "medium", "app/api/orders.py (removed line)", "line", "with_for_update",
+            "locks rows", "-    stmt = stmt.with_for_update()",
+        )
+    ]  # fmt: skip
 
 
 def test_content_rule_respects_word_boundaries():
@@ -76,7 +85,7 @@ def test_added_line_that_looks_like_a_header_is_still_content():
     )
     level, reasons = apply_floors(d, FLOORS)
     assert level == "medium"
-    assert {r.split(":")[0] for r in reasons} == {"app/x.py"}
+    assert all(r.where.startswith("app/x.py:") for r in reasons)
 
 
 def test_pure_rename_without_content_change_hits_path_floor():
@@ -115,7 +124,7 @@ def test_git_quoted_path_in_file_headers():
         "@@ -0,0 +1,1 @@\n+stmt.with_for_update()\n"
     )
     _, reasons = apply_floors(d, FLOORS)
-    assert reasons == ['app/auth "v2".py: changed line matches with_for_update (medium)']
+    assert reasons[0].where == 'app/auth "v2".py:1'
 
 
 def test_carriage_return_cannot_hide_content():
@@ -135,4 +144,26 @@ def test_undecodable_bytes_raise_the_floor():
     d = "--- a/app/x.py\n+++ b/app/x.py\n@@ -0,0 +1,1 @@\n+x = '�'\n"
     level, reasons = apply_floors(d, FLOORS)
     assert level == "medium"
-    assert any("not UTF-8" in r for r in reasons)
+    assert any("not UTF-8" in r.why for r in reasons)
+
+
+def test_added_line_proof_cites_its_new_line_number():
+    d = diff("app/x.py", " keep", "+a.with_for_update()")
+    _, reasons = apply_floors(d, FLOORS)
+    assert reasons == [
+        Reason(
+            "medium", "app/x.py:2", "line", "with_for_update", "locks rows", "+a.with_for_update()"
+        )
+    ]
+
+
+def test_highest_level_reasons_come_first():
+    d = diff("migrations/m.py", "+x") + diff(".github/ci.yml", "+y")
+    _, reasons = apply_floors(d, FLOORS)
+    assert [r.level for r in reasons] == ["high", "medium"]
+
+
+def test_proof_prefers_the_added_line_over_the_removed_one():
+    d = diff("app/x.py", "-a.with_for_update()", "+b.with_for_update()")
+    _, reasons = apply_floors(d, FLOORS)
+    assert reasons[0].proof == "+b.with_for_update()"

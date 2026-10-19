@@ -4,33 +4,52 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 
 from review.agent import AgentError, run_structured
-from review.diff import parse_diff
+from review.diff import DiffLine, parse_diff
 from review.policy import Floors
-from review.schema import Level, RiskVerdict, max_level
+from review.schema import LEVELS, Level, RiskVerdict, max_level
 
 
-def apply_floors(diff: str, floors: Floors) -> tuple[Level, list[str]]:
-    level: Level = "low"
-    reasons: list[str] = []
+@dataclass(frozen=True)
+class Reason:
+    """One thing that raised the risk. Plain text; github.py renders and escapes it."""
+
+    level: Level
+    where: str  # "path:line", "path (removed line)", a path, or "" for the whole PR
+    kind: str  # path | line | check | classifier | verifier
+    rule: str  # the REVIEW.md glob or regex, "" for checks and models
+    why: str
+    proof: str = ""  # the matching changed line; "" for a path rule (the file itself)
+
+
+def _where(line: DiffLine) -> str:
+    return f"{line.path}:{line.new_line}" if line.new_line else f"{line.path} (removed line)"
+
+
+def apply_floors(diff: str, floors: Floors) -> tuple[Level, list[Reason]]:
+    """Floor level and the reasons for it, highest level first."""
+    found: list[Reason] = []
     if "\ufffd" in diff:  # bytes that were not valid UTF-8, replaced on decode
-        level, reasons = "medium", ["diff contains bytes that are not UTF-8 (medium)"]
+        found.append(Reason("medium", "", "check", "", "diff contains bytes that are not UTF-8"))
     paths, hunk_lines = parse_diff(diff)
-    changed: dict[str, list[str]] = {p: [] for p in paths}
+    changed: dict[str, list[DiffLine]] = {p: [] for p in paths}
     for line in hunk_lines:
         if line.kind in "+-":
-            changed.setdefault(line.path, []).append(line.text)
+            changed.setdefault(line.path, []).append(line)
     for path, lines in changed.items():
         for rule_level, globs in floors.paths.items():
             for glob in globs:
                 if fnmatchcase(path, glob):
-                    level = max_level(level, rule_level)
-                    reasons.append(f"{path} matches {glob} ({rule_level})")
+                    found.append(Reason(rule_level, path, "path", glob, floors.why[glob]))
         for rule_level, patterns in floors.content.items():
             for pattern in patterns:
-                if any(pattern.search(line) for line in lines):
-                    level = max_level(level, rule_level)
-                    reasons.append(f"{path}: changed line matches {pattern.pattern} ({rule_level})")
-    return level, reasons
+                hits = [ln for ln in lines if pattern.search(ln.text)]
+                if hit := min(hits, key=lambda ln: ln.kind != "+", default=None):  # new code first
+                    found.append(Reason(
+                        rule_level, _where(hit), "line", pattern.pattern,
+                        floors.why[pattern.pattern], hit.kind + hit.text,
+                    ))  # fmt: skip
+    found.sort(key=lambda r: LEVELS.index(r.level), reverse=True)  # stable within a level
+    return max_level("low", *(r.level for r in found)), found
 
 
 # --- classifier + verifier -------------------------------------------------------------
@@ -60,7 +79,7 @@ VERIFIER_SYSTEM = (
 @dataclass
 class RiskDecision:
     level: Level
-    reasons: list[str] = field(default_factory=list)
+    reasons: list[Reason] = field(default_factory=list)
     cost_usd: float = 0.0
 
 
@@ -75,7 +94,9 @@ async def decide_risk(diff, floors, *, pr_text, root, run=run_structured) -> Ris
     floor, reasons = apply_floors(diff, floors)
     if len(diff) > MAX_DIFF_CHARS:
         floor = max_level(floor, "medium")
-        reasons.append(f"diff is larger than {MAX_DIFF_CHARS} chars (medium)")
+        reasons.append(
+            Reason("medium", "", "check", "", f"diff is larger than {MAX_DIFF_CHARS} chars")
+        )
     decision = RiskDecision(level=floor, reasons=reasons)
     if floor != "low":
         return decision  # humans are required anyway; don't spend tokens
@@ -87,7 +108,10 @@ async def decide_risk(diff, floors, *, pr_text, root, run=run_structured) -> Ris
         )
         decision.cost_usd += cost or 0
         decision.level = max_level(floor, first.level)
-        decision.reasons += [f"classifier: {r}" for r in first.reasons]
+        decision.reasons += [
+            Reason(first.level, "", "classifier", "", r)
+            for r in first.reasons or (["(no reason given)"] if first.level != "low" else [])
+        ]
         if decision.level != "low":
             return decision
 
@@ -98,15 +122,20 @@ async def decide_risk(diff, floors, *, pr_text, root, run=run_structured) -> Ris
         decision.cost_usd += cost or 0
     except AgentError as e:
         decision.level = "high"
-        decision.reasons.append(f"risk agent failed, failing closed: {e}")
+        decision.reasons.append(
+            Reason("high", "", "check", "", f"risk agent failed, failing closed: {e}")
+        )
         return decision
 
     if second.level != "low" and second.evidence:
         decision.level = second.level
-        decision.reasons += [f"verifier: {r}" for r in second.reasons]
-        decision.reasons += [f"verifier evidence: {e}" for e in second.evidence]
+        proof = "; ".join(second.evidence)
+        decision.reasons += [
+            Reason(second.level, "", "verifier", "", r, proof)
+            for r in second.reasons or ["(no reason given)"]  # never drop the evidence
+        ]
     elif second.level != "low":
-        decision.reasons.append(
-            f"verifier rated {second.level} without file:line evidence; ignored"
-        )
+        decision.reasons.append(Reason(
+            "low", "", "verifier", "", f"rated {second.level} without file:line evidence; ignored"
+        ))  # fmt: skip
     return decision

@@ -20,6 +20,7 @@ class FakeIo:
     labels: list = field(default_factory=list)
     env_during_agents: dict = field(default_factory=dict)
     root: Path = Path(".")
+    merges_since: bool = False
 
     def get_reviews(self):
         return self.reviews
@@ -39,6 +40,9 @@ class FakeIo:
     def is_ancestor(self, a, b):
         return True
 
+    def has_merges_since(self, base):
+        return self.merges_since
+
     def post(self, payload):
         self.posted.append(payload)
 
@@ -46,17 +50,17 @@ class FakeIo:
         self.labels = labels
 
 
-def bot_review(sha, round_, verdict):
+def bot_review(sha, round_, verdict, human=False):
     return {
         "user": {"login": BOT_LOGIN},
-        "body": format_marker(Marker(sha, round_, verdict, "low")),
+        "body": format_marker(Marker(sha, round_, verdict, "low", human)),
     }
 
 
 def fakes(io, findings=(), seen=None):
     async def risk(diff, floors, *, pr_text, root):
         io.env_during_agents["risk"] = os.environ.get("GH_TOKEN")
-        return RiskDecision(level="low", reasons=["floor"])
+        return RiskDecision(level="low")
 
     async def review(diff, **kw):
         io.env_during_agents["review"] = os.environ.get("GH_TOKEN")
@@ -152,3 +156,44 @@ def test_subprocess_output_keeps_carriage_returns():
         sys.executable, "-c", f"import sys; sys.stdout.buffer.write({raw!r})"
     )
     assert out == raw.decode()
+
+
+def test_important_finding_requests_a_human_through_the_label():
+    io = FakeIo()
+    assert run(io, findings=[f("important")]) == 0
+    assert io.labels == ["risk:low", "needs-human"]
+
+
+def test_nit_alone_requests_no_human():
+    io = FakeIo()
+    run(io, findings=[f("nit")])
+    assert io.labels == ["risk:low"]
+
+
+def test_reuse_keeps_the_human_requirement_when_the_label_write_failed():
+    # round 1 posted a review needing a human, then the label call failed; the re-run reuses it
+    io = FakeIo(reviews=[bot_review("head", 1, "pass", human=True)])
+    run(io)
+    assert io.labels == ["risk:low", "needs-human"]
+
+
+def test_a_merge_from_main_since_the_last_round_gets_a_full_review():
+    # a merge brings main's changes into base..HEAD; they are not the PR's code
+    io, seen = FakeIo(reviews=[bot_review("old", 1, "pass")], merges_since=True), {}
+    run(io, seen=seen)
+    assert seen["diff"] == io.full_diff()
+
+
+def test_inline_comments_are_placed_against_the_pr_diff_not_the_round_diff():
+    io = FakeIo(reviews=[bot_review("old", 1, "pass")])  # incremental round
+    finding = Finding(file="x.py", line=1, severity="important", evidence="x", why="w")
+    run(io, findings=[finding])
+    assert [c["line"] for c in io.posted[0]["comments"]] == [1]
+
+
+def test_human_requirement_from_an_earlier_round_stays_in_the_report():
+    io = FakeIo(reviews=[bot_review("old", 1, "pass", human=True)])
+    run(io)
+    body = io.posted[0]["body"]
+    assert "| Findings | earlier round: blocking or important | 1 |" in body
+    assert "human=1 -->" in body and io.labels == ["risk:low", "needs-human"]

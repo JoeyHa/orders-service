@@ -15,7 +15,9 @@ SAMPLE = """# Review guide
 ```json
 {
   "paths": {"high": [".github/**"], "medium": ["migrations/**"]},
-  "content": {"medium": ["with_for_update", "text\\\\("]}
+  "content": {"medium": ["with_for_update", "text\\\\("]},
+  "why": {".github/**": "ci", "migrations/**": "schema", "with_for_update": "locks",
+          "text\\\\(": "raw sql"}
 }
 ```
 
@@ -27,6 +29,17 @@ def test_parses_paths_and_content():
     floors = load_floors(SAMPLE)
     assert floors.paths == {"high": [".github/**"], "medium": ["migrations/**"]}
     assert [p.pattern for p in floors.content["medium"]] == ["with_for_update", "text\\("]
+    assert floors.why["migrations/**"] == "schema"
+
+
+def test_rule_without_a_why_is_rejected():
+    with pytest.raises(ValueError, match="why"):
+        load_floors(SAMPLE.replace('"migrations/**": "schema", ', ""))
+
+
+def test_why_for_an_unknown_rule_is_rejected():
+    with pytest.raises(ValueError, match="why"):
+        load_floors(SAMPLE.replace('"ci"', '"ci", "gone/**": "typo"'))
 
 
 def test_missing_floors_section_fails_closed():
@@ -76,3 +89,9 @@ def test_review_json_schema_is_exposed_for_the_agent():
 )
 def test_max_level(levels, expected):
     assert max_level(*levels) == expected
+
+
+@pytest.mark.parametrize("value", ['""', '"  "', "1", "null"])
+def test_empty_or_non_text_why_is_rejected(value):
+    with pytest.raises(ValueError, match="why"):
+        load_floors(SAMPLE.replace('"schema"', value))

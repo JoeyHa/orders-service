@@ -10,9 +10,9 @@ from pathlib import Path
 
 from review.github import SecretLeak, build_review, post_review, risk_labels, set_labels
 from review.policy import load_floors
-from review.reviewer import review_pr
+from review.reviewer import humans_for_findings, review_pr
 from review.risk import decide_risk
-from review.rounds import parse_markers, plan_round
+from review.rounds import RoundPlan, parse_markers, plan_round
 from review.schema import max_level
 
 
@@ -27,15 +27,24 @@ def without_github_token():
 
 
 async def run_review(io, *, head_sha: str, policy: dict, decide=decide_risk, review=review_pr):
-    plan = plan_round(parse_markers(io.get_reviews()), head_sha, is_ancestor=io.is_ancestor)
+    markers = parse_markers(io.get_reviews())
+    plan = plan_round(markers, head_sha, is_ancestor=io.is_ancestor)
     if plan.action == "reuse":
         print(f"verdict for {head_sha} already recorded: {plan.prior.verdict}")
-        io.set_labels(risk_labels(plan.prior.risk, needs_human=False))  # recover a failed label
+        io.set_labels(
+            risk_labels(plan.prior.risk, needs_human=plan.prior.human)
+        )  # recover a failed label
         return 1 if plan.prior.verdict == "block" else 0
     if plan.action == "cap":
         print("review round cap reached; handing to a human")
         io.set_labels(risk_labels(plan.prior.risk, needs_human=True))
         return 0
+
+    if plan.action == "incremental" and io.has_merges_since(plan.base):
+        # a merge from main brings code that is not the PR's into base..HEAD
+        # shortcut: full re-review after such a merge; a merge-tree interdiff would cost less
+        plan = RoundPlan("full", plan.round)
+    human_before = any(m.human for m in markers)
 
     full_diff = io.full_diff()
     diff = io.incremental_diff(plan.base) if plan.action == "incremental" else full_diff
@@ -53,13 +62,15 @@ async def run_review(io, *, head_sha: str, policy: dict, decide=decide_risk, rev
 
     try:
         payload = build_review(
-            result, head_sha=head_sha, plan=plan, risk_reasons=risk.reasons, diff=diff
-        )
+            result, head_sha=head_sha, plan=plan, risk_reasons=risk.reasons,
+            diff=full_diff, human_before=human_before,
+        )  # fmt: skip
     except SecretLeak as e:
         print(f"::error::{e}")
         return 1
     io.post(payload)
-    io.set_labels(risk_labels(result.risk_level, needs_human=False))
+    needs_human = human_before or humans_for_findings(result.findings) > 0  # sticky
+    io.set_labels(risk_labels(result.risk_level, needs_human=needs_human))
     return 1 if result.blocking else 0
 
 
@@ -100,6 +111,11 @@ class GhIo:
 
     def incremental_diff(self, base: str):
         return self._out("git", "-C", str(self.root), "diff", f"{base}..HEAD")
+
+    def has_merges_since(self, base: str) -> bool:
+        return bool(
+            self._out("git", "-C", str(self.root), "rev-list", "--merges", f"{base}..HEAD").strip()
+        )
 
     def is_ancestor(self, a: str, b: str) -> bool:
         cmd = ["git", "-C", str(self.root), "merge-base", "--is-ancestor", a, b]

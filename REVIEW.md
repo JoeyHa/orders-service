@@ -18,7 +18,7 @@ Owners: @JoeyHa
 
 ## Risk floors
 
-Minimum risk by path or by changed line, applied by the CI review before any model runs. Models can raise a PR above its floor, never below. Read from `main`.
+Minimum risk by path or by changed line, applied by the CI review before any model runs. Models can raise a PR above its floor, never below. Read from `main`. Every rule needs a `why`; the review quotes it next to its proof (the matching changed line for a line rule, the changed file for a path rule), and a rule with a missing or empty `why` fails the review closed.
 
 ```json
 {
@@ -28,6 +28,25 @@ Minimum risk by path or by changed line, applied by the CI review before any mod
   },
   "content": {
     "medium": ["text\\(", "with_for_update", "require_api_key", "ALLOWED_TRANSITIONS", "\\b(DROP|ALTER|TRUNCATE)\\b"]
+  },
+  "why": {
+    ".github/**": "CI and review workflows; a change can switch off checks or expose secrets",
+    "REVIEW.md": "the review policy itself, including these floors",
+    "CLAUDE.md": "instructions every AI reviewer follows",
+    ".claude/**": "local review skill, diff-reviewer agent and the PR gate hook",
+    "review/**": "the CI reviewer's own code",
+    "scripts/**": "the PR gate and issue-link checks",
+    "migrations/**": "schema changes run against live data and are hard to undo",
+    "app/auth.py": "decides who may write",
+    "app/db.py": "engine and session behind every request",
+    "app/models.py": "the schema every query relies on",
+    "pyproject.toml": "dependencies and build settings",
+    "Dockerfile": "what ships to production",
+    "text\\(": "raw SQL, outside the ORM's injection and type safety",
+    "with_for_update": "the row lock that prevents lost updates",
+    "require_api_key": "the auth check on write endpoints",
+    "ALLOWED_TRANSITIONS": "the order state machine; money moves on these transitions",
+    "\\b(DROP|ALTER|TRUNCATE)\\b": "destructive or table-locking SQL"
   }
 }
 ```
@@ -46,4 +65,4 @@ At most 3, labeled `nit:`, never blocking. Skip anything `ruff` already enforces
 
 ## Output
 
-Start with the count: `N findings (M blocking)`. Then findings, most severe first. If there is nothing to fix, say exactly `0 findings — nothing to fix.` and stop.
+Start with the count per rank: `N findings: M blocking · K important · …`. Then findings, most severe first. If there is nothing to fix, say exactly `0 findings — nothing to fix.` and stop.
