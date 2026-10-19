@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -64,7 +65,7 @@ def test_passes_when_nothing_to_review(repo):
 
 
 def claude_hook(repo: Path, command: str) -> int:
-    payload = f'{{"tool_name":"Bash","tool_input":{{"command":"{command}"}}}}'
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
     return subprocess.run(
         [SCRIPTS / "claude-pre-pr-gate.sh"],
         input=payload,
@@ -74,13 +75,31 @@ def claude_hook(repo: Path, command: str) -> int:
     ).returncode
 
 
-@pytest.mark.parametrize("command", ["git push -u origin feature", "gh pr create --fill"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git push -u origin feature",
+        "gh pr create --fill",
+        "cd /repo && git push",
+        "ruff check .; git push origin main",
+        "  git  push",
+    ],
+)
 def test_claude_hook_blocks_push_and_pr_without_review(repo, command):
     assert claude_hook(repo, command) == 2
 
 
-def test_claude_hook_ignores_other_commands(repo):
-    assert claude_hook(repo, "pytest -q") == 0
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pytest -q",
+        'echo "git push"',
+        "git log --grep='gh pr create'",
+        "cat > review.txt <<'EOF'\nfound `*\"git push\"*` on line 5\nEOF",
+    ],
+)
+def test_claude_hook_ignores_other_commands(repo, command):
+    assert claude_hook(repo, command) == 0
 
 
 def test_claude_hook_allows_push_after_review(repo):
