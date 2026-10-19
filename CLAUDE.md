@@ -25,7 +25,7 @@ Python 3.12 · FastAPI · SQLAlchemy 2 async (asyncpg) · Alembic · Postgres 16
 9. Tests hit real Postgres; no DB mocks. Every new endpoint behavior gets a test.
 10. FastAPI dependencies use `Annotated[...]`. `ruff check` and `ruff format --check` stay clean.
 
-Before pushing or opening a PR, run `/pre-pr` (lint, tests, build, diff review). Pushes are gated on it.
+Before pushing or opening a PR, run `/pre-pr` (lint, tests, build, diff review). Claude Code blocks push and `gh pr create` until it passes; plain `git push` is blocked too once `git config core.hooksPath .githooks` is set.
 
 If a PR changes something this file states (stack, layout, a convention, commands), update this file in the same PR.
 

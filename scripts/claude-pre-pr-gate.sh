@@ -1,6 +1,8 @@
 #!/bin/sh
 # Claude Code PreToolUse hook: block `git push` / `gh pr create` until /pre-pr passed for HEAD.
 # Matches them only as commands (line start or after ; & |), not as text inside strings.
+# shortcut: misses wrapped forms (`git -C . push`, `sh -c ...`); .githooks/pre-push is the backstop.
+# Fails open on python errors on purpose: this runs on every Bash call, failing closed would block all of them.
 python3 -c '
 import json, re, sys
 cmd = json.load(sys.stdin).get("tool_input", {}).get("command", "")

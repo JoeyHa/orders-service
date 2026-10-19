@@ -27,7 +27,9 @@ def repo(tmp_path: Path) -> Path:
     git(tmp_path, "commit", "-q", "--allow-empty", "-m", "base")
     git(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
     git(tmp_path, "switch", "-q", "-c", "feature")
-    git(tmp_path, "commit", "-q", "--allow-empty", "-m", "change")
+    (tmp_path / "f.txt").write_text("change\n")
+    git(tmp_path, "add", "f.txt")
+    git(tmp_path, "commit", "-q", "-m", "change")
     return tmp_path
 
 
@@ -61,6 +63,12 @@ def test_blocks_when_review_is_for_older_commit(repo):
 
 def test_passes_when_nothing_to_review(repo):
     git(repo, "switch", "-q", "main")
+    assert check(repo) == 0
+
+
+def test_passes_when_branch_has_commits_but_no_changes(repo):
+    git(repo, "switch", "-q", "-c", "empty", "main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "empty")
     assert check(repo) == 0
 
 

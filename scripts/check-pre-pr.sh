@@ -2,7 +2,7 @@
 # Exit 0 if the pre-pr review (written by the Claude Code pre-pr skill) passed for HEAD.
 # shortcut: checks HEAD only, not every ref being pushed; fine for one-branch-at-a-time pushes.
 head=$(git rev-parse HEAD) || exit 1
-git merge-base --is-ancestor "$head" origin/main 2>/dev/null && exit 0  # nothing new to review
+git diff --quiet origin/main..."$head" 2>/dev/null && exit 0  # nothing to review (matches /pre-pr scope)
 
 marker="$(git rev-parse --git-dir)/pre-pr-review"
 if [ -f "$marker" ] && [ "$(sed -n 1p "$marker")" = "$head" ] && [ "$(sed -n 2p "$marker")" = "PASS" ]; then
