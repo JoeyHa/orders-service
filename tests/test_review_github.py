@@ -152,7 +152,7 @@ def test_summary_table_shows_findings_risk_approvals_and_cost(level, needed):
     assert f"| ✅ 0 findings — nothing to fix | {level} | {needed} | $0.26 |" in body.replace(
         "🔴 ", ""
     ).replace("🟡 ", "").replace("🟢 ", "")
-    assert "Risk is blast radius, not defects" in body
+    assert "Risk sets the count by blast radius" in body
 
 
 def test_deciding_reasons_in_a_table_the_rest_collapsed():
@@ -229,3 +229,18 @@ def test_no_reason_at_the_level_is_said_plainly():
     r = ReviewResult(depth="standard", risk_level="medium", findings=[])
     body = build(r, risk_reasons=[Reason("low", "", "check", "", "minor")])["body"]
     assert "No recorded reason at this level." in body
+
+
+def test_human_review_combines_both_rankings():
+    r = ReviewResult(depth="standard", risk_level="low", findings=[finding(11, "important")])
+    body = build(r)["body"]
+    assert "### Who must review" in body
+    assert "| Risk | 🟢 low | 0 |" in body
+    assert "| Findings | 1 important | 1 |" in body
+    assert "| **Required** | the higher of the two | **1** |" in body
+    assert "| 1 human |" in body.split("### Who must review")[0]  # summary agrees
+
+
+def test_nits_alone_need_no_human():
+    r = ReviewResult(depth="quick", risk_level="low", findings=[finding(11, "nit")])
+    assert "| Findings | 0 blocking or important | 0 |" in build(r)["body"]

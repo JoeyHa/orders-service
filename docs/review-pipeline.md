@@ -173,7 +173,7 @@ A Quick review that finds something serious **escalates** to Deep and raises the
 
 ## L6 — Human approval ✅
 
-**Built:** `review/approvals.py` via `.github/workflows/approvals.yml`. Low 0 / medium 1 / high 2 (`needs-human` → at least 1); only non-bot, non-author approvals of the current head commit count; an unrated PR is blocked; a maintainer's `break-glass` passes with a logged warning. **Known gap:** `pull_request_review` runs the workflow file from the PR branch — protect `.github/` with a ruleset before relying on it.
+**Built:** `review/approvals.py` via `.github/workflows/approvals.yml`. Low 0 / medium 1 / high 2 (`needs-human` → at least 1). The AI review sets `needs-human` when any finding is blocking or important, so required humans = max(risk count, 1 if such a finding); the label is never removed by a later round, so a person, not the bot, confirms the fix. The report's "Who must review" table shows both rankings and the result; only non-bot, non-author approvals of the current head commit count; an unrated PR is blocked; a maintainer's `break-glass` passes with a logged warning. **Known gap:** `pull_request_review` runs the workflow file from the PR branch — protect `.github/` with a ruleset before relying on it.
 
 **Count by risk:** low = 0, medium = 1, high = 2. GitHub has one approvals number per branch, so a **custom required check** reads the risk (set only by the bot, recomputed on every push) and counts approvals.
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from review.github import SecretLeak, build_review, post_review, risk_labels, set_labels
 from review.policy import load_floors
-from review.reviewer import review_pr
+from review.reviewer import humans_for_findings, review_pr
 from review.risk import decide_risk
 from review.rounds import parse_markers, plan_round
 from review.schema import max_level
@@ -59,7 +59,8 @@ async def run_review(io, *, head_sha: str, policy: dict, decide=decide_risk, rev
         print(f"::error::{e}")
         return 1
     io.post(payload)
-    io.set_labels(risk_labels(result.risk_level, needs_human=False))
+    needs_human = humans_for_findings(result.findings) > 0  # label is sticky across rounds
+    io.set_labels(risk_labels(result.risk_level, needs_human=needs_human))
     return 1 if result.blocking else 0
 
 

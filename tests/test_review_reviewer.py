@@ -114,3 +114,13 @@ def test_summary_when_every_finding_is_unverified(root):
     assert summarize([], unverified=1) == (
         "0 findings; 1 unverified finding not posted (evidence not found in file)"
     )
+
+
+@pytest.mark.parametrize(
+    "severities,humans",
+    [((), 0), (("nit", "pre-existing"), 0), (("important",), 1), (("blocking", "nit"), 1)],
+)
+def test_blocking_or_important_findings_need_a_human(severities, humans):
+    from review.reviewer import humans_for_findings
+
+    assert humans_for_findings([f(s) for s in severities]) == humans

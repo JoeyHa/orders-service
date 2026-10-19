@@ -152,3 +152,15 @@ def test_subprocess_output_keeps_carriage_returns():
         sys.executable, "-c", f"import sys; sys.stdout.buffer.write({raw!r})"
     )
     assert out == raw.decode()
+
+
+def test_important_finding_requests_a_human_through_the_label():
+    io = FakeIo()
+    assert run(io, findings=[f("important")]) == 0
+    assert io.labels == ["risk:low", "needs-human"]
+
+
+def test_nit_alone_requests_no_human():
+    io = FakeIo()
+    run(io, findings=[f("nit")])
+    assert io.labels == ["risk:low"]

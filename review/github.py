@@ -10,7 +10,7 @@ import subprocess
 
 from review.approvals import REQUIRED
 from review.diff import parse_diff
-from review.reviewer import ReviewResult, summarize
+from review.reviewer import HUMAN_SEVERITIES, ReviewResult, humans_for_findings, summarize
 from review.risk import Reason
 from review.rounds import Marker, RoundPlan, format_marker
 from review.schema import SEVERITY_MEANING
@@ -113,7 +113,9 @@ def build_review(
     else:
         icon = "❌" if result.blocking else ("⚠️" if result.findings else "✅")
         verdict = f"{icon} {summarize(result.findings, len(result.unverified)).rstrip('.')}"
-    needed = REQUIRED[f"risk:{result.risk_level}"]
+    by_risk = REQUIRED[f"risk:{result.risk_level}"]
+    by_findings = humans_for_findings(result.findings)
+    needed = max(by_risk, by_findings)
     humans = _HUMANS.get(needed, f"{needed} humans")
     risk = f"{_ICON[result.risk_level]} {result.risk_level}"
 
@@ -122,8 +124,26 @@ def build_review(
         f"## AI review · round {plan.round} ({plan.action}) · {result.depth}",
         _table("| Findings | Risk | Approvals needed | Cost |",
                [f"| {_cell(verdict)} | {risk} | {humans} | ${result.cost_usd:.2f} |"]),
-        "> Risk is blast radius, not defects: it sets how many humans must approve, "
-        "even when there is nothing to fix.",
+    ]  # fmt: skip
+    serious = sum(f.severity in HUMAN_SEVERITIES for f in result.findings)
+    found = (
+        " · ".join(
+            f"{n} {s}"
+            for s in HUMAN_SEVERITIES
+            if (n := sum(f.severity == s for f in result.findings))
+        )
+        if serious
+        else "0 blocking or important"
+    )
+    parts += [
+        "### Who must review",
+        _table("| Ranking | Result | Humans |", [
+            f"| Risk | {risk} | {by_risk} |",
+            f"| Findings | {found} | {by_findings} |",
+            f"| **Required** | the higher of the two | **{needed}** |",
+        ]),
+        "Risk sets the count by blast radius; any blocking or important finding needs at least "
+        "one human to confirm the fix. Bots never approve.",
     ]  # fmt: skip
     if result.failed:
         parts.append(f"**The review failed, so this check blocks:** {_cell(result.error)}")

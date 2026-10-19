@@ -62,6 +62,13 @@ def verify_findings(findings: list[Finding], root: Path) -> tuple[list[Finding],
     return ok, bad
 
 
+HUMAN_SEVERITIES = ("blocking", "important")  # a person confirms these are fixed, not the bot
+
+
+def humans_for_findings(findings: list[Finding]) -> int:
+    return 1 if any(f.severity in HUMAN_SEVERITIES for f in findings) else 0
+
+
 def summarize(findings: list[Finding], unverified: int) -> str:
     """Count-first summary computed by us; model counts are not trusted."""
     if not findings and not unverified:
