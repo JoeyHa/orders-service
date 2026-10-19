@@ -113,3 +113,9 @@ def test_verifier_evidence_without_reasons_is_still_recorded():
     d = decide(DOCS_DIFF, run)
     assert d.level == "medium"
     assert [(r.kind, r.proof) for r in d.reasons] == [("verifier", "app/api/orders.py:66")]
+
+
+def test_classifier_raise_without_reasons_is_still_recorded():
+    d = decide(DOCS_DIFF, FakeRun(verdict("medium", [])))
+    assert d.level == "medium"
+    assert [(r.level, r.kind) for r in d.reasons] == [("medium", "classifier")]

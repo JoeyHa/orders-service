@@ -74,17 +74,21 @@ def _reason_row(r: Reason) -> str:
     return f"| {where} | {rule} | {_cell(r.why)} | {proof} |"
 
 
-def _risk_section(level: str, reasons: list[Reason]) -> list[str]:
-    head = f"### Why risk is {level}"
-    if not reasons:
-        if level == "low":
-            return [head, "No risk floor matched, and the risk models rated it low."]
-        return [head, "Raised by the code review itself (see findings)."]
+def _risk_section(level: str, reasons: list[Reason], *, escalated: bool) -> list[str]:
+    parts = [f"### Why risk is {level}"]
+    top = [r for r in reasons if r.level == level]
+    rest = [r for r in reasons if r.level != level]
     header = "| Where | Rule | Why | Proof |"
-    top = [r for r in reasons if r.level == level] or reasons
-    rest = [r for r in reasons if r not in top]
-    parts = [head, _table(header, [_reason_row(r) for r in top])]
-    if rest:
+    if escalated:
+        parts.append("A quick review found a blocking issue, so the PR was re-rated high "
+                     "and re-reviewed at deep depth.")  # fmt: skip
+    elif top:
+        parts.append(_table(header, [_reason_row(r) for r in top]))
+    elif level == "low" and not reasons:
+        parts.append("No risk floor matched, and the risk models rated it low.")
+    else:
+        parts.append("No recorded reason at this level.")
+    if rest := rest + (top if escalated else []):
         n = len(rest)
         levels = ", ".join(dict.fromkeys(r.level for r in rest))
         summary = f"{n} more reason{'s' if n > 1 else ''} ({levels})"
@@ -123,7 +127,7 @@ def build_review(
     ]  # fmt: skip
     if result.failed:
         parts.append(f"**The review failed, so this check blocks:** {_cell(result.error)}")
-    parts += _risk_section(result.risk_level, risk_reasons)
+    parts += _risk_section(result.risk_level, risk_reasons, escalated=result.escalated)
     parts.append("### Findings")
     if result.findings:
         ranked = sorted(result.findings, key=lambda f: list(SEVERITY_MEANING).index(f.severity))
@@ -136,8 +140,6 @@ def build_review(
         parts.append(" · ".join(f"**{s}**: {m}" for s, m in SEVERITY_MEANING.items()))
     else:
         parts.append("None.")
-    if result.escalated:
-        parts.append("A quick review found a blocking issue, so it was re-reviewed at deep depth.")
     if result.dropped_nits:
         parts.append(f"{result.dropped_nits} more nits not shown (cap is 3).")
 

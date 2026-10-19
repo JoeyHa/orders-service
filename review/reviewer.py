@@ -68,7 +68,9 @@ def summarize(findings: list[Finding], unverified: int) -> str:
         return "0 findings — nothing to fix."
     counts = [(s, sum(f.severity == s for f in findings)) for s in SEVERITY_MEANING]
     noun = "finding" if len(findings) == 1 else "findings"
-    text = f"{len(findings)} {noun}: " + " · ".join(f"{n} {s}" for s, n in counts if n)
+    text = f"{len(findings)} {noun}"
+    if findings:
+        text += ": " + " · ".join(f"{n} {s}" for s, n in counts if n)
     if unverified:
         text += f"; {unverified} unverified finding not posted (evidence not found in file)"
     return text

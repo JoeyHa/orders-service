@@ -65,4 +65,4 @@ At most 3, labeled `nit:`, never blocking. Skip anything `ruff` already enforces
 
 ## Output
 
-Start with the count: `N findings (M blocking)`. Then findings, most severe first. If there is nothing to fix, say exactly `0 findings — nothing to fix.` and stop.
+Start with the count per rank: `N findings: M blocking · K important · …`. Then findings, most severe first. If there is nothing to fix, say exactly `0 findings — nothing to fix.` and stop.

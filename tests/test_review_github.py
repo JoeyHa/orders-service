@@ -215,3 +215,17 @@ def test_inline_evidence_is_neither_truncated_nor_pipe_escaped():
     long = "a | b" + "x" * 300
     f = Finding(file="app.py", line=11, severity="important", evidence=long, why="w")
     assert build(result(f))["comments"][0]["body"].endswith(f"`{long}`")
+
+
+def test_escalation_is_named_as_the_reason_not_lower_reasons():
+    low = Reason("low", "", "verifier", "", "rated high without file:line evidence; ignored")
+    r = ReviewResult(depth="deep", risk_level="high", findings=[], escalated=True)
+    top = build(r, risk_reasons=[low])["body"].split("<details>")[0]
+    assert "a quick review found a blocking issue" in top.split("### Findings")[0]
+    assert "ignored" not in top
+
+
+def test_no_reason_at_the_level_is_said_plainly():
+    r = ReviewResult(depth="standard", risk_level="medium", findings=[])
+    body = build(r, risk_reasons=[Reason("low", "", "check", "", "minor")])["body"]
+    assert "No recorded reason at this level." in body

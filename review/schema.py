@@ -29,7 +29,7 @@ class Finding(BaseModel):
 
 
 class Review(BaseModel):
-    summary: str = Field(description="Starts with the count, e.g. '2 findings (1 blocking)'")
+    summary: str = Field(description="Starts with the count, e.g. '2 findings: 1 blocking · 1 nit'")
     findings: list[Finding]
 
 

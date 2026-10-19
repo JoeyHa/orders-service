@@ -108,3 +108,9 @@ def test_every_rank_has_one_meaning_shared_by_prompt_and_report():
     assert tuple(SEVERITY_MEANING) == get_args(Severity)  # rank order, most severe first
     assert "Severity: {severities}." in SYSTEM
     assert all(f"{s} = {m}" in SEVERITIES for s, m in SEVERITY_MEANING.items())
+
+
+def test_summary_when_every_finding_is_unverified(root):
+    assert summarize([], unverified=1) == (
+        "0 findings; 1 unverified finding not posted (evidence not found in file)"
+    )
