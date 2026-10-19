@@ -18,7 +18,7 @@ Owners: @JoeyHa
 
 ## Risk floors
 
-Minimum risk by path or by changed line, applied by the CI review before any model runs. Models can raise a PR above its floor, never below. Read from `main`. Every rule needs a `why`; the review quotes it with the matching line as proof, and a rule without one fails the review closed.
+Minimum risk by path or by changed line, applied by the CI review before any model runs. Models can raise a PR above its floor, never below. Read from `main`. Every rule needs a `why`; the review quotes it next to its proof (the matching changed line for a line rule, the changed file for a path rule), and a rule with a missing or empty `why` fails the review closed.
 
 ```json
 {

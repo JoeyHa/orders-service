@@ -89,3 +89,9 @@ def test_review_json_schema_is_exposed_for_the_agent():
 )
 def test_max_level(levels, expected):
     assert max_level(*levels) == expected
+
+
+@pytest.mark.parametrize("value", ['""', '"  "', "1", "null"])
+def test_empty_or_non_text_why_is_rejected(value):
+    with pytest.raises(ValueError, match="why"):
+        load_floors(SAMPLE.replace('"schema"', value))

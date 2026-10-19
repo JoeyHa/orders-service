@@ -175,3 +175,9 @@ def test_proof_prefers_the_added_line_over_the_removed_one():
     d = diff("app/x.py", "-a.with_for_update()", "+b.with_for_update()")
     _, reasons = apply_floors(d, FLOORS)
     assert reasons[0].endswith("proof: `+b.with_for_update()`")
+
+
+def test_newline_in_a_path_cannot_break_the_code_span():
+    d = 'diff --git "a/.github/x\\ny.yml" "b/.github/x\\ny.yml"\nnew file mode 100644\n'
+    _, reasons = apply_floors(d, FLOORS)
+    assert "\n" not in reasons[0] and "`.github/x\\ny.yml`" in reasons[0]

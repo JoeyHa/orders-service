@@ -41,4 +41,6 @@ def load_floors(review_md: str) -> Floors:
         raise ValueError(f"floors.why has no reason for: {missing}")
     if unknown := sorted(why.keys() - rules):
         raise ValueError(f"floors.why names rules that do not exist: {unknown}")
+    if blank := sorted(r for r, v in why.items() if not isinstance(v, str) or not v.strip()):
+        raise ValueError(f"floors.why is empty or not text for: {blank}")
     return Floors(paths=raw.get("paths", {}), content=content, why=why)

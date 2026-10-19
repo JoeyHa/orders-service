@@ -14,6 +14,7 @@ MAX_PROOF_CHARS = 120
 
 def _code(text: str) -> str:
     """Markdown code span that diff text (author-controlled) cannot close early."""
+    text = text.replace("\r", "\\r").replace("\n", "\\n")  # a line break would end the span
     if len(text) > MAX_PROOF_CHARS:
         text = text[:MAX_PROOF_CHARS] + "…"
     if "`" not in text:
