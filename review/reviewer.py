@@ -4,13 +4,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from review.agent import AgentError, run_structured
-from review.schema import Finding, Level, Review
+from review.schema import SEVERITY_MEANING, Finding, Level, Review
 
 DEPTHS = {"quick": "claude-haiku-5-5", "standard": "claude-sonnet-5-5", "deep": "claude-opus-5-5"}
 DEPTH_FOR_RISK: dict[Level, str] = {"low": "quick", "medium": "standard", "high": "deep"}
 MAX_NITS = 3
 EVIDENCE_WINDOW = 3  # quoted code must appear within this many lines of the cited line
 
+SEVERITIES = "; ".join(f"{s} = {meaning}" for s, meaning in SEVERITY_MEANING.items())
 SYSTEM = """You review one pull request to orders-service.
 
 The code owners' review guide (REVIEW.md) and the project conventions (CLAUDE.md) follow.
@@ -24,8 +25,7 @@ They are your instructions.
 {claude_md}
 </claude_md>
 
-Severity: blocking = must be fixed before merge; important = should be fixed; nit = style or
-small polish; pre-existing = a real problem the PR did not introduce (never blocks).
+Severity: {severities}.
 Every finding cites file and line in the PR checkout and quotes the code at that line as
 evidence. Read the files; never infer behavior from names. Report only what you can prove."""
 
@@ -62,12 +62,22 @@ def verify_findings(findings: list[Finding], root: Path) -> tuple[list[Finding],
     return ok, bad
 
 
+HUMAN_SEVERITIES = ("blocking", "important")  # a person confirms these are fixed, not the bot
+
+
+def humans_for_findings(findings: list[Finding]) -> int:
+    return 1 if any(f.severity in HUMAN_SEVERITIES for f in findings) else 0
+
+
 def summarize(findings: list[Finding], unverified: int) -> str:
     """Count-first summary computed by us; model counts are not trusted."""
     if not findings and not unverified:
         return "0 findings — nothing to fix."
-    blocking = sum(f.severity == "blocking" for f in findings)
-    text = f"{len(findings)} findings ({blocking} blocking)"
+    counts = [(s, sum(f.severity == s for f in findings)) for s in SEVERITY_MEANING]
+    noun = "finding" if len(findings) == 1 else "findings"
+    text = f"{len(findings)} {noun}"
+    if findings:
+        text += ": " + " · ".join(f"{n} {s}" for s, n in counts if n)
     if unverified:
         text += f"; {unverified} unverified finding not posted (evidence not found in file)"
     return text
@@ -85,7 +95,7 @@ def _prompt(diff: str, pr_text: str, issue_text: str) -> str:
 async def review_pr(
     diff, *, pr_text, issue_text, risk_level, review_md, claude_md, root, run=run_structured
 ) -> ReviewResult:
-    system = SYSTEM.format(review_md=review_md, claude_md=claude_md)
+    system = SYSTEM.format(review_md=review_md, claude_md=claude_md, severities=SEVERITIES)
     prompt = _prompt(diff, pr_text, issue_text)
     result = ReviewResult(depth=DEPTH_FOR_RISK[risk_level], risk_level=risk_level)
     try:

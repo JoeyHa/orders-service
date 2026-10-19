@@ -9,7 +9,9 @@ from review.risk import CLASSIFIER_MODEL, MAX_DIFF_CHARS, VERIFIER_MODEL, decide
 from review.schema import RiskVerdict
 
 FLOORS = load_floors(
-    '## Risk floors\n\n```json\n{"paths": {"medium": ["migrations/**"]}, "content": {}}\n```\n'
+    "## Risk floors\n\n```json\n"
+    '{"paths": {"medium": ["migrations/**"]}, "content": {}, "why": {"migrations/**": "s"}}'
+    "\n```\n"
 )
 DOCS_DIFF = "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+docs\n"
 MIGRATION_DIFF = "--- a/migrations/x.py\n+++ b/migrations/x.py\n@@ -1 +1 @@\n+x\n"
@@ -71,14 +73,14 @@ def test_verifier_raise_with_evidence_stands():
     run = FakeRun(verdict("low"), verdict("high", ["drops a lock"], ["app/api/orders.py:66"]))
     d = decide(DOCS_DIFF, run)
     assert d.level == "high"
-    assert any("app/api/orders.py:66" in r for r in d.reasons)
+    assert any("app/api/orders.py:66" in r.proof for r in d.reasons)
 
 
 def test_verifier_raise_without_evidence_is_ignored_and_recorded():
     run = FakeRun(verdict("low"), verdict("high", ["feels risky"]))
     d = decide(DOCS_DIFF, run)
     assert d.level == "low"
-    assert any("without file:line evidence" in r for r in d.reasons)
+    assert any("without file:line evidence" in r.why for r in d.reasons)
 
 
 @pytest.mark.parametrize("failing_call", [0, 1])
@@ -87,7 +89,7 @@ def test_agent_failure_fails_closed_to_high(failing_call):
     verdicts[failing_call] = AgentError("boom")
     d = decide(DOCS_DIFF, FakeRun(*verdicts))
     assert d.level == "high"
-    assert any("boom" in r for r in d.reasons)
+    assert any("boom" in r.why for r in d.reasons)
 
 
 def test_pr_text_is_passed_as_untrusted_context():
@@ -104,3 +106,16 @@ def test_oversized_diff_gets_a_deterministic_floor():
     d = decide(big, run)
     assert d.level == "medium"
     assert run.calls == []
+
+
+def test_verifier_evidence_without_reasons_is_still_recorded():
+    run = FakeRun(verdict("low"), verdict("medium", [], ["app/api/orders.py:66"]))
+    d = decide(DOCS_DIFF, run)
+    assert d.level == "medium"
+    assert [(r.kind, r.proof) for r in d.reasons] == [("verifier", "app/api/orders.py:66")]
+
+
+def test_classifier_raise_without_reasons_is_still_recorded():
+    d = decide(DOCS_DIFF, FakeRun(verdict("medium", [])))
+    assert d.level == "medium"
+    assert [(r.level, r.kind) for r in d.reasons] == [("medium", "classifier")]

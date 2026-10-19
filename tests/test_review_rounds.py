@@ -63,3 +63,13 @@ def test_cap_stops_automatic_review(done):
 def test_latest_marker_is_the_base():
     p = plan_round(markers(bot("first", 1), bot("second", 2)), "head", is_ancestor=always)
     assert p.base == "second"
+
+
+def test_marker_round_trips_the_human_requirement():
+    m = Marker("abc123", 1, "pass", "low", human=True)
+    assert parse_markers([comment(format_marker(m))]) == [m]
+
+
+def test_marker_from_before_the_human_field_still_parses():
+    old = "<!-- ai-review sha=abc123 round=1 verdict=pass risk=low -->"
+    assert parse_markers([comment(old)]) == [Marker("abc123", 1, "pass", "low", human=False)]

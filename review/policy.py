@@ -14,6 +14,7 @@ _BLOCK = re.compile(r"```json\n(.*?)\n```", re.S)
 class Floors:
     paths: dict[str, list[str]]  # level -> glob patterns
     content: dict[str, list[re.Pattern[str]]]  # level -> regexes over changed lines
+    why: dict[str, str]  # rule (glob or regex source) -> why it raises the floor
 
 
 def load_floors(review_md: str) -> Floors:
@@ -34,4 +35,12 @@ def load_floors(review_md: str) -> Floors:
             content[level] = [re.compile(p) for p in patterns]
         except re.error as e:
             raise ValueError(f"invalid regex in floors.content.{level}: {e}") from e
-    return Floors(paths=raw.get("paths", {}), content=content)
+    rules = {r for kind in ("paths", "content") for rs in raw.get(kind, {}).values() for r in rs}
+    why = raw.get("why", {})
+    if missing := sorted(rules - why.keys()):
+        raise ValueError(f"floors.why has no reason for: {missing}")
+    if unknown := sorted(why.keys() - rules):
+        raise ValueError(f"floors.why names rules that do not exist: {unknown}")
+    if blank := sorted(r for r, v in why.items() if not isinstance(v, str) or not v.strip()):
+        raise ValueError(f"floors.why is empty or not text for: {blank}")
+    return Floors(paths=raw.get("paths", {}), content=content, why=why)

@@ -118,6 +118,7 @@ Expensive code gets **more people and more checks**: higher floor, deeper review
 - Content rules (grep, LLM backup): raw SQL (`text(`), lock removal, new endpoints.
 - Any PR touching policy files → **high**.
 - If floors already say medium/high, skip the classifier and verifier (humans are required anyway).
+- Every rule carries a `why` in REVIEW.md (missing one fails closed). The report opens with a one-row table (findings · risk · approvals needed · cost), then a `Where | Rule | Why | Proof` table of the reasons at the deciding level (lower ones collapsed), then a findings table. For a line rule, Where is the `file:line` and the proof is the matching `+`/`-` line text, quoted from the diff by code, never by a model; for a path rule the proof is the changed file. Findings are sorted by rank (blocking, important, nit, pre-existing) with a legend; the rank meanings live once in `review/schema.py` and feed both the model's prompt and the report. The diff-size and non-UTF-8 floors are fixed checks in code and carry no rule or why. A `why` must be non-empty text. Reasons are typed records (`review.risk.Reason`); only `review/github.py` renders them, escaping author-controlled text so it cannot break the table.
 
 **2. Classifier (cheap model).** Rates the PR low / medium / high. Can only **raise** above the floor, never lower.
 
@@ -172,7 +173,7 @@ A Quick review that finds something serious **escalates** to Deep and raises the
 
 ## L6 — Human approval ✅
 
-**Built:** `review/approvals.py` via `.github/workflows/approvals.yml`. Low 0 / medium 1 / high 2 (`needs-human` → at least 1); only non-bot, non-author approvals of the current head commit count; an unrated PR is blocked; a maintainer's `break-glass` passes with a logged warning. **Known gap:** `pull_request_review` runs the workflow file from the PR branch — protect `.github/` with a ruleset before relying on it.
+**Built:** `review/approvals.py` via `.github/workflows/approvals.yml`. Low 0 / medium 1 / high 2 (`needs-human` → at least 1). The AI review sets `needs-human` when any finding is blocking or important, so required humans = max(risk count, 1 if such a finding); the label is never removed by a later round, so a person, not the bot, confirms the fix. The report's "Who must review" table shows both rankings and the result; only non-bot, non-author approvals of the current head commit count; an unrated PR is blocked; a maintainer's `break-glass` passes with a logged warning. **Known gap:** `pull_request_review` runs the workflow file from the PR branch — protect `.github/` with a ruleset before relying on it.
 
 **Count by risk:** low = 0, medium = 1, high = 2. GitHub has one approvals number per branch, so a **custom required check** reads the risk (set only by the bot, recomputed on every push) and counts approvals.
 

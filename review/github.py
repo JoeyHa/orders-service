@@ -8,9 +8,12 @@ import json
 import re
 import subprocess
 
+from review.approvals import REQUIRED
 from review.diff import parse_diff
-from review.reviewer import ReviewResult, summarize
+from review.reviewer import HUMAN_SEVERITIES, ReviewResult, humans_for_findings, summarize
+from review.risk import Reason
 from review.rounds import Marker, RoundPlan, format_marker
+from review.schema import SEVERITY_MEANING
 
 _SECRETS = [
     re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
@@ -20,6 +23,9 @@ _SECRETS = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 ]
 RISK_LABELS = ("risk:low", "risk:medium", "risk:high")
+MAX_CODE_CHARS = 120
+_ICON = {"low": "🟢", "medium": "🟡", "high": "🔴"}
+_HUMANS = {0: "none", 1: "1 human"}
 
 
 class SecretLeak(RuntimeError):
@@ -39,36 +45,131 @@ def commentable_lines(diff: str) -> dict[str, set[int]]:
     return lines
 
 
+def code_span(text: str, *, table: bool = True) -> str:
+    """Code span that author-controlled text cannot close early; table cells get stricter rules."""
+    text = text.replace("\r", "\\r").replace("\n", "\\n")  # a line break ends the span
+    if table:
+        if len(text) > MAX_CODE_CHARS:
+            text = text[:MAX_CODE_CHARS] + "…"
+        text = text.replace("|", "\\|")  # GitHub splits table cells on | even inside code
+    if "`" not in text:
+        return f"`{text}`"
+    fence = "`" * (max(len(run) for run in re.findall(r"`+", text)) + 1)
+    return f"{fence} {text} {fence}"
+
+
+def _cell(text: str) -> str:
+    return " ".join(text.split()).replace("|", "\\|")
+
+
+def _table(header: str, rows: list[str]) -> str:
+    cols = header.count("|") - 1
+    return "\n".join([header, "|" + "---|" * cols, *rows])
+
+
+def _reason_row(r: Reason) -> str:
+    where = code_span(r.where) if r.where else "whole PR"
+    rule = f"{r.kind} {code_span(r.rule)}" if r.rule else r.kind
+    proof = code_span(r.proof) if r.proof else ("file changed" if r.kind == "path" else "—")
+    return f"| {where} | {rule} | {_cell(r.why)} | {proof} |"
+
+
+def _risk_section(level: str, reasons: list[Reason], *, escalated: bool) -> list[str]:
+    parts = [f"### Why risk is {level}"]
+    top = [r for r in reasons if r.level == level]
+    rest = [r for r in reasons if r.level != level]
+    header = "| Where | Rule | Why | Proof |"
+    if escalated:
+        parts.append("A quick review found a blocking issue, so the PR was re-rated high "
+                     "and re-reviewed at deep depth.")  # fmt: skip
+    elif top:
+        parts.append(_table(header, [_reason_row(r) for r in top]))
+    elif level == "low" and not reasons:
+        parts.append("No risk floor matched, and the risk models rated it low.")
+    else:
+        parts.append("No recorded reason at this level.")
+    if rest := rest + (top if escalated else []):
+        n = len(rest)
+        levels = ", ".join(dict.fromkeys(r.level for r in rest))
+        summary = f"{n} more reason{'s' if n > 1 else ''} ({levels})"
+        rows = _table(header, [_reason_row(r) for r in rest])
+        parts.append(f"<details><summary>{summary}</summary>\n\n{rows}\n\n</details>")
+    return parts
+
+
 def build_review(
-    result: ReviewResult, *, head_sha: str, plan: RoundPlan, risk_reasons: list[str], diff: str
+    result: ReviewResult,
+    *,
+    head_sha: str,
+    plan: RoundPlan,
+    risk_reasons: list[Reason],
+    diff: str,  # the PR's full diff: GitHub accepts inline comments only on its lines
+    human_before: bool = False,  # an earlier round already required a human
 ) -> dict:
-    marker = Marker(head_sha, plan.round, "block" if result.blocking else "pass", result.risk_level)
+    verdict = "block" if result.blocking else "pass"
+    human = human_before or humans_for_findings(result.findings) > 0
+    marker = Marker(head_sha, plan.round, verdict, result.risk_level, human)
     on_diff = commentable_lines(diff)
-    inline, elsewhere = [], []
-    for f in result.findings:
-        if f.line in on_diff.get(f.file, set()):
-            body = f"**{f.severity}**: {f.why}\n\n`{f.evidence}`"
-            inline.append({"path": f.file, "line": f.line, "side": "RIGHT", "body": body})
-        else:
-            elsewhere.append(f"- `{f.file}:{f.line}` **{f.severity}**: {f.why}")
+    inline = [
+        {"path": f.file, "line": f.line, "side": "RIGHT",
+         "body": f"**{f.severity}**: {f.why}\n\n{code_span(f.evidence, table=False)}"}
+        for f in result.findings if f.line in on_diff.get(f.file, set())
+    ]  # fmt: skip
+
+    if result.failed:
+        verdict = "❌ review failed"
+    else:
+        icon = "❌" if result.blocking else ("⚠️" if result.findings or result.unverified else "✅")
+        verdict = f"{icon} {summarize(result.findings, len(result.unverified)).rstrip('.')}"
+    by_risk = REQUIRED[f"risk:{result.risk_level}"]
+    by_findings = int(human)
+    needed = max(by_risk, by_findings)
+    humans = _HUMANS.get(needed, f"{needed} humans")
+    risk = f"{_ICON[result.risk_level]} {result.risk_level}"
 
     parts = [
         format_marker(marker),
-        f"### AI review: round {plan.round} ({plan.action}), {result.depth} depth",
-    ]
+        f"## AI review · round {plan.round} ({plan.action}) · {result.depth}",
+        _table("| Findings | Risk | Approvals needed | Cost |",
+               [f"| {_cell(verdict)} | {risk} | {humans} | ${result.cost_usd:.2f} |"]),
+    ]  # fmt: skip
+    serious = sum(f.severity in HUMAN_SEVERITIES for f in result.findings)
+    found = (
+        " · ".join(
+            f"{n} {s}"
+            for s in HUMAN_SEVERITIES
+            if (n := sum(f.severity == s for f in result.findings))
+        )
+        if serious
+        else ("earlier round: blocking or important" if human_before else "0 blocking or important")
+    )
+    parts += [
+        "### Who must review",
+        _table("| Ranking | Result | Humans |", [
+            f"| Risk | {risk} | {by_risk} |",
+            f"| Findings | {found} | {by_findings} |",
+            f"| **Required** | the higher of the two | **{needed}** |",
+        ]),
+        "Risk sets the count by blast radius; any blocking or important finding needs at least "
+        "one human to confirm the fix. Bots never approve.",
+    ]  # fmt: skip
     if result.failed:
-        parts.append(f"**Review failed, so this check blocks:** {result.error}")
+        parts.append(f"**The review failed, so this check blocks:** {_cell(result.error)}")
+    parts += _risk_section(result.risk_level, risk_reasons, escalated=result.escalated)
+    parts.append("### Findings")
+    if result.findings:
+        ranked = sorted(result.findings, key=lambda f: list(SEVERITY_MEANING).index(f.severity))
+        rows = [
+            f"| {f.severity} | {code_span(f'{f.file}:{f.line}')} | {_cell(f.why)} "
+            f"| {code_span(f.evidence)} |"
+            for f in ranked
+        ]
+        parts.append(_table("| Severity | Where | Why | Evidence |", rows))
+        parts.append(" · ".join(f"**{s}**: {m}" for s, m in SEVERITY_MEANING.items()))
     else:
-        parts.append(f"**{summarize(result.findings, len(result.unverified))}**")
-    parts.append(f"**Risk: {result.risk_level}**")
-    parts += [f"- {r}" for r in risk_reasons]
-    if result.escalated:
-        parts.append("A quick review found a blocking issue, so it was re-reviewed at deep depth.")
-    if elsewhere:
-        parts += ["Findings outside the changed lines:", *elsewhere]
+        parts.append("None.")
     if result.dropped_nits:
         parts.append(f"{result.dropped_nits} more nits not shown (cap is 3).")
-    parts.append(f"Cost: ${result.cost_usd:.2f}")
 
     payload = {"commit_id": head_sha, "event": "COMMENT", "body": "\n\n".join(parts)}
     payload["comments"] = inline
@@ -84,8 +185,10 @@ def risk_labels(level: str, *, needs_human: bool) -> list[str]:
 def _gh(*args: str, payload: dict | None = None) -> str:
     out = subprocess.run(
         ["gh", "api", *args], input=json.dumps(payload) if payload else None,
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )  # fmt: skip
+    if out.returncode != 0:  # keep GitHub's reason; CalledProcessError drops stderr from the log
+        raise RuntimeError(f"gh api {' '.join(args[:3])} failed: {out.stderr.strip()}")
     return out.stdout
 
 

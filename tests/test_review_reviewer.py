@@ -52,7 +52,8 @@ def test_evidence_must_appear_near_the_cited_line(root):
 
 def test_summary_count_is_computed_not_trusted(root):
     s = summarize([f("blocking"), f("nit"), f("pre-existing")], unverified=1)
-    assert s.startswith("3 findings (1 blocking)")
+    assert s.startswith("3 findings: 1 blocking · 1 nit · 1 pre-existing")
+    assert summarize([f("important")], unverified=0) == "1 finding: 1 important"
     assert "1 unverified finding not posted" in s
     assert summarize([], unverified=0) == "0 findings — nothing to fix."
 
@@ -96,3 +97,30 @@ def test_agent_failure_fails_the_review(root):
 def test_blocking_property(root):
     run = FakeRun(Review(summary="", findings=[f("important"), f("pre-existing")]))
     assert not review(run, root, risk="medium").blocking
+
+
+def test_every_rank_has_one_meaning_shared_by_prompt_and_report():
+    from typing import get_args
+
+    from review.reviewer import SEVERITIES, SYSTEM
+    from review.schema import SEVERITY_MEANING, Severity
+
+    assert tuple(SEVERITY_MEANING) == get_args(Severity)  # rank order, most severe first
+    assert "Severity: {severities}." in SYSTEM
+    assert all(f"{s} = {m}" in SEVERITIES for s, m in SEVERITY_MEANING.items())
+
+
+def test_summary_when_every_finding_is_unverified(root):
+    assert summarize([], unverified=1) == (
+        "0 findings; 1 unverified finding not posted (evidence not found in file)"
+    )
+
+
+@pytest.mark.parametrize(
+    "severities,humans",
+    [((), 0), (("nit", "pre-existing"), 0), (("important",), 1), (("blocking", "nit"), 1)],
+)
+def test_blocking_or_important_findings_need_a_human(severities, humans):
+    from review.reviewer import humans_for_findings
+
+    assert humans_for_findings([f(s) for s in severities]) == humans
