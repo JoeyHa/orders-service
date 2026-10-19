@@ -2,7 +2,7 @@
 # Claude Code PreToolUse hook: block `gh pr create` until /pre-pr passed for HEAD.
 # Pushes are allowed (WIP backup and sharing); review is gated where a PR is opened.
 # Matches only as a command (line start or after ; & |), not as text inside strings.
-# shortcut: misses wrapped forms (`sh -c ...`) and PRs opened outside Claude Code; CI enforces.
+# shortcut: misses wrapped forms (`sh -c ...`) and PRs opened outside Claude Code; CI review (L5) is the backstop.
 # Fails open on python errors on purpose: this runs on every Bash call, failing closed would block all of them.
 python3 -c '
 import json, re, sys
