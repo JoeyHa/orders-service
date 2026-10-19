@@ -105,3 +105,32 @@ def test_risk_labels():
 def test_header_lookalike_lines_keep_line_numbers_in_step():
     d = "--- a/app.py\n+++ b/app.py\n@@ -1,1 +1,3 @@\n keep\n+++ x\n+after\n"
     assert commentable_lines(d) == {"app.py": {1, 2, 3}}
+
+
+def test_label_removal_failure_other_than_404_is_an_error(monkeypatch):
+    import subprocess as sp
+
+    from review import github
+
+    def fake_run(cmd, **kw):
+        if "DELETE" in cmd:
+            return sp.CompletedProcess(cmd, 1, "", "HTTP 403: Resource not accessible")
+        return sp.CompletedProcess(cmd, 0, "{}", "")
+
+    monkeypatch.setattr(github.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError, match="403"):
+        github.set_labels("o/r", 1, ["risk:high"])
+
+
+def test_label_removal_404_is_fine(monkeypatch):
+    import subprocess as sp
+
+    from review import github
+
+    def fake_run(cmd, **kw):
+        if "DELETE" in cmd:
+            return sp.CompletedProcess(cmd, 1, "", "HTTP 404: Label does not exist")
+        return sp.CompletedProcess(cmd, 0, "{}", "")
+
+    monkeypatch.setattr(github.subprocess, "run", fake_run)
+    github.set_labels("o/r", 1, ["risk:high"])

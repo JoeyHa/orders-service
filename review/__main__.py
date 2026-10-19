@@ -30,6 +30,7 @@ async def run_review(io, *, head_sha: str, policy: dict, decide=decide_risk, rev
     plan = plan_round(parse_markers(io.get_reviews()), head_sha, is_ancestor=io.is_ancestor)
     if plan.action == "reuse":
         print(f"verdict for {head_sha} already recorded: {plan.prior.verdict}")
+        io.set_labels(risk_labels(plan.prior.risk, needs_human=False))  # recover a failed label
         return 1 if plan.prior.verdict == "block" else 0
     if plan.action == "cap":
         print("review round cap reached; handing to a human")
@@ -72,8 +73,9 @@ class GhIo:
         return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
 
     def get_reviews(self):
-        return json.loads(self._out("gh", "api", "--paginate", "--slurp",
-                                    f"repos/{self.repo}/pulls/{self.pr}/reviews"))[0]  # fmt: skip
+        pages = json.loads(self._out("gh", "api", "--paginate", "--slurp",
+                                     f"repos/{self.repo}/pulls/{self.pr}/reviews"))  # fmt: skip
+        return [review for page in pages for review in page]
 
     def _pr(self):
         return json.loads(self._out("gh", "pr", "view", str(self.pr), "--repo", self.repo,

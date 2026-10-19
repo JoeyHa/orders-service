@@ -125,3 +125,17 @@ def test_secret_in_output_posts_nothing_and_fails():
 
     code = asyncio.run(run_review(io, head_sha="head", policy=POLICY, decide=risk, review=review))
     assert code == 1 and io.posted == []
+
+
+def test_reuse_reapplies_the_stored_risk_label():
+    io = FakeIo(reviews=[bot_review("head", 1, "pass")])
+    run(io)
+    assert io.labels == ["risk:low"]
+
+
+def test_get_reviews_flattens_every_page(monkeypatch):
+    from review.__main__ import GhIo
+
+    gh = GhIo("o/r", 1, Path("."))
+    monkeypatch.setattr(gh, "_out", lambda *cmd: '[[{"id": 1}], [{"id": 2}]]')
+    assert gh.get_reviews() == [{"id": 1}, {"id": 2}]

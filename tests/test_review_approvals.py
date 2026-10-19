@@ -76,3 +76,10 @@ def test_break_glass_by_maintainer_passes_with_warning():
 def test_break_glass_by_non_maintainer_is_ignored():
     data = pr(labels=["risk:high", "break-glass"], labeled_by={"break-glass": "dev"})
     assert decide(data)[0] == 1
+
+
+def test_two_risk_labels_count_as_the_higher_one():
+    # a failed label removal must never lower the bar
+    data = pr(labels=["risk:low", "risk:high"], reviews=[approval("alice")])
+    code, msg = decide(data)
+    assert code == 1 and "risk:high" in msg

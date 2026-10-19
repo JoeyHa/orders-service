@@ -23,7 +23,8 @@ def decide_approvals(pr: dict, *, maintainers: frozenset[str]) -> tuple[int, str
     if breaker in maintainers:
         return 0, f"::warning::break-glass applied by {breaker}: approval requirement bypassed."
 
-    risk = next((label for label in REQUIRED if label in labels), None)
+    # if a stale label survived, the higher one wins: a failure must never lower the bar
+    risk = max((label for label in REQUIRED if label in labels), key=REQUIRED.get, default=None)
     if risk is None:
         return 1, "::error::Blocked: PR not rated yet; waiting for the AI review to set risk."
     needed = max(REQUIRED[risk], 1 if "needs-human" in labels else 0)

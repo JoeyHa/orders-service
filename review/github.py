@@ -95,9 +95,11 @@ def post_review(repo: str, pr: int, payload: dict) -> None:
 
 def set_labels(repo: str, pr: int, labels: list[str]) -> None:
     for stale in set(RISK_LABELS) - set(labels):
-        subprocess.run(
+        out = subprocess.run(
             ["gh", "api", "--method", "DELETE", f"repos/{repo}/issues/{pr}/labels/{stale}"],
-            capture_output=True,
-        )  # absent labels 404; that's fine
+            capture_output=True, text=True,
+        )  # fmt: skip
+        if out.returncode != 0 and "404" not in out.stderr:  # absent label: fine
+            raise RuntimeError(f"could not remove {stale}: {out.stderr.strip()}")
     _gh("--method", "POST", f"repos/{repo}/issues/{pr}/labels", "--input", "-",
         payload={"labels": labels})  # fmt: skip
