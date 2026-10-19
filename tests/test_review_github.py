@@ -221,7 +221,7 @@ def test_escalation_is_named_as_the_reason_not_lower_reasons():
     low = Reason("low", "", "verifier", "", "rated high without file:line evidence; ignored")
     r = ReviewResult(depth="deep", risk_level="high", findings=[], escalated=True)
     top = build(r, risk_reasons=[low])["body"].split("<details>")[0]
-    assert "a quick review found a blocking issue" in top.split("### Findings")[0]
+    assert "A quick review found a blocking issue" in top.split("### Findings")[0]
     assert "ignored" not in top
 
 

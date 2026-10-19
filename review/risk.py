@@ -110,7 +110,7 @@ async def decide_risk(diff, floors, *, pr_text, root, run=run_structured) -> Ris
         decision.level = max_level(floor, first.level)
         decision.reasons += [
             Reason(first.level, "", "classifier", "", r)
-            for r in first.reasons or ["(no reason given)"]  # never lose why the level rose
+            for r in first.reasons or (["(no reason given)"] if first.level != "low" else [])
         ]
         if decision.level != "low":
             return decision
