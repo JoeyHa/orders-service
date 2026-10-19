@@ -12,7 +12,8 @@ from typing import Literal
 BOT_LOGIN = "github-actions[bot]"
 MAX_ROUNDS = 3
 _MARKER = re.compile(
-    r"<!-- ai-review sha=(\w+) round=(\d+) verdict=(pass|block) risk=(low|medium|high) -->"
+    r"<!-- ai-review sha=(\w+) round=(\d+) verdict=(pass|block) risk=(low|medium|high)"
+    r"(?: human=([01]))? -->"  # markers posted before the human field have none
 )
 
 
@@ -22,6 +23,7 @@ class Marker:
     round: int
     verdict: Literal["pass", "block"]
     risk: Literal["low", "medium", "high"]
+    human: bool = False  # a finding needs a human; kept so a re-run can restore the label
 
 
 @dataclass(frozen=True)
@@ -33,7 +35,10 @@ class RoundPlan:
 
 
 def format_marker(m: Marker) -> str:
-    return f"<!-- ai-review sha={m.sha} round={m.round} verdict={m.verdict} risk={m.risk} -->"
+    return (
+        f"<!-- ai-review sha={m.sha} round={m.round} verdict={m.verdict} risk={m.risk}"
+        f" human={int(m.human)} -->"
+    )
 
 
 def parse_markers(comments: list[dict]) -> list[Marker]:
@@ -42,8 +47,8 @@ def parse_markers(comments: list[dict]) -> list[Marker]:
         if (c.get("user") or {}).get("login") != BOT_LOGIN:
             continue
         if match := _MARKER.search(c.get("body") or ""):
-            sha, round_, verdict, risk = match.groups()
-            markers.append(Marker(sha, int(round_), verdict, risk))
+            sha, round_, verdict, risk, human = match.groups()
+            markers.append(Marker(sha, int(round_), verdict, risk, human == "1"))
     return markers
 
 

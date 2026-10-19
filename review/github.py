@@ -100,7 +100,9 @@ def _risk_section(level: str, reasons: list[Reason], *, escalated: bool) -> list
 def build_review(
     result: ReviewResult, *, head_sha: str, plan: RoundPlan, risk_reasons: list[Reason], diff: str
 ) -> dict:
-    marker = Marker(head_sha, plan.round, "block" if result.blocking else "pass", result.risk_level)
+    verdict = "block" if result.blocking else "pass"
+    human = humans_for_findings(result.findings) > 0
+    marker = Marker(head_sha, plan.round, verdict, result.risk_level, human)
     on_diff = commentable_lines(diff)
     inline = [
         {"path": f.file, "line": f.line, "side": "RIGHT",
@@ -111,7 +113,7 @@ def build_review(
     if result.failed:
         verdict = "❌ review failed"
     else:
-        icon = "❌" if result.blocking else ("⚠️" if result.findings else "✅")
+        icon = "❌" if result.blocking else ("⚠️" if result.findings or result.unverified else "✅")
         verdict = f"{icon} {summarize(result.findings, len(result.unverified)).rstrip('.')}"
     by_risk = REQUIRED[f"risk:{result.risk_level}"]
     by_findings = humans_for_findings(result.findings)

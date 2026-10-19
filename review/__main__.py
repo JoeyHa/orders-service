@@ -30,7 +30,9 @@ async def run_review(io, *, head_sha: str, policy: dict, decide=decide_risk, rev
     plan = plan_round(parse_markers(io.get_reviews()), head_sha, is_ancestor=io.is_ancestor)
     if plan.action == "reuse":
         print(f"verdict for {head_sha} already recorded: {plan.prior.verdict}")
-        io.set_labels(risk_labels(plan.prior.risk, needs_human=False))  # recover a failed label
+        io.set_labels(
+            risk_labels(plan.prior.risk, needs_human=plan.prior.human)
+        )  # recover a failed label
         return 1 if plan.prior.verdict == "block" else 0
     if plan.action == "cap":
         print("review round cap reached; handing to a human")

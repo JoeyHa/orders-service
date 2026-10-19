@@ -46,10 +46,10 @@ class FakeIo:
         self.labels = labels
 
 
-def bot_review(sha, round_, verdict):
+def bot_review(sha, round_, verdict, human=False):
     return {
         "user": {"login": BOT_LOGIN},
-        "body": format_marker(Marker(sha, round_, verdict, "low")),
+        "body": format_marker(Marker(sha, round_, verdict, "low", human)),
     }
 
 
@@ -164,3 +164,10 @@ def test_nit_alone_requests_no_human():
     io = FakeIo()
     run(io, findings=[f("nit")])
     assert io.labels == ["risk:low"]
+
+
+def test_reuse_keeps_the_human_requirement_when_the_label_write_failed():
+    # round 1 posted a review needing a human, then the label call failed; the re-run reuses it
+    io = FakeIo(reviews=[bot_review("head", 1, "pass", human=True)])
+    run(io)
+    assert io.labels == ["risk:low", "needs-human"]

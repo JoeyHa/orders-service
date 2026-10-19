@@ -244,3 +244,13 @@ def test_human_review_combines_both_rankings():
 def test_nits_alone_need_no_human():
     r = ReviewResult(depth="quick", risk_level="low", findings=[finding(11, "nit")])
     assert "| Findings | 0 blocking or important | 0 |" in build(r)["body"]
+
+
+def test_marker_records_that_a_finding_needs_a_human():
+    assert "human=1 -->" in build(result(finding(11, "important")))["body"]
+    assert "human=0 -->" in build(result(finding(11, "nit")))["body"]
+
+
+def test_dropped_findings_never_show_a_green_check():
+    r = ReviewResult(depth="quick", risk_level="low", findings=[], unverified=[finding(11)])
+    assert "| ⚠️ 0 findings; 1 unverified" in build(r)["body"]
