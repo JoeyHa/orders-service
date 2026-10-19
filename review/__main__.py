@@ -70,7 +70,10 @@ class GhIo:
         self.repo, self.pr, self.root = repo, pr, pr_dir
 
     def _out(self, *cmd: str) -> str:
-        return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+        # bytes, not text=True: text mode turns a lone \r into \n and splits diff lines
+        return subprocess.run(cmd, capture_output=True, check=True).stdout.decode(
+            "utf-8", "replace"
+        )
 
     def get_reviews(self):
         pages = json.loads(self._out("gh", "api", "--paginate", "--slurp",

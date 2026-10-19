@@ -139,3 +139,16 @@ def test_get_reviews_flattens_every_page(monkeypatch):
     gh = GhIo("o/r", 1, Path("."))
     monkeypatch.setattr(gh, "_out", lambda *cmd: '[[{"id": 1}], [{"id": 2}]]')
     assert gh.get_reviews() == [{"id": 1}, {"id": 2}]
+
+
+def test_subprocess_output_keeps_carriage_returns():
+    # text mode would turn "\r" into "\n" and split one diff line into two, hiding content
+    import sys
+
+    from review.__main__ import GhIo
+
+    raw = b"+x = 1\rALTER TABLE orders\n"
+    out = GhIo("o/r", 1, Path("."))._out(
+        sys.executable, "-c", f"import sys; sys.stdout.buffer.write({raw!r})"
+    )
+    assert out == raw.decode()

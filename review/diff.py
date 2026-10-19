@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 _HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _QUOTED = r'"(?:[^"\\]|\\.)*"'
-_GIT_HEADER = re.compile(rf"^diff --git ({_QUOTED}|a/.+?) ({_QUOTED}|b/.+)$")
+_GIT_HEADER = re.compile(rf"^diff --git ({_QUOTED}) ({_QUOTED})$")
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,24 @@ def _name(raw: str) -> str | None:
     if raw == "/dev/null":
         return None
     return raw[2:] if raw[:2] in ("a/", "b/") else raw
+
+
+def _header_paths(rest: str) -> set[str]:
+    """Paths from an unquoted "a/X b/Y" header, which is ambiguous when X contains " b/"."""
+    n = (len(rest) - 5) // 2  # same name twice: "a/" + X + " b/" + X
+    if (
+        n > 0
+        and rest.startswith("a/")
+        and rest[2 : 2 + n] == rest[-n:]
+        and rest[2 + n : 5 + n] == " b/"
+    ):
+        return {rest[2 : 2 + n]}
+    # otherwise record every possible split: an extra path can only raise the floor
+    paths = set()
+    for i in range(len(rest)):
+        if rest.startswith(" b/", i) and rest.startswith("a/"):
+            paths.update({rest[2:i], rest[i + 3 :]})
+    return paths
 
 
 def parse_diff(diff: str) -> tuple[set[str], list[DiffLine]]:
@@ -62,6 +80,8 @@ def parse_diff(diff: str) -> tuple[set[str], list[DiffLine]]:
             # renames, empty files and mode changes have no ---/+++ lines; git always prints this
             if match := _GIT_HEADER.match(raw):
                 paths.update(p for p in map(_name, match.groups()) if p)
+            elif raw.startswith("diff --git "):
+                paths.update(_header_paths(raw[len("diff --git ") :]))
         elif raw.startswith(("rename from ", "rename to ")):
             paths.add(_unquote(raw.split(" ", 2)[2]))
         elif raw.startswith("--- "):

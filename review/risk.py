@@ -12,6 +12,8 @@ from review.schema import Level, RiskVerdict, max_level
 def apply_floors(diff: str, floors: Floors) -> tuple[Level, list[str]]:
     level: Level = "low"
     reasons: list[str] = []
+    if "\ufffd" in diff:  # bytes that were not valid UTF-8, replaced on decode
+        level, reasons = "medium", ["diff contains bytes that are not UTF-8 (medium)"]
     paths, hunk_lines = parse_diff(diff)
     changed: dict[str, list[str]] = {p: [] for p in paths}
     for line in hunk_lines:

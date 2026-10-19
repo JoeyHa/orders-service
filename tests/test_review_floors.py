@@ -116,3 +116,23 @@ def test_git_quoted_path_in_file_headers():
     )
     _, reasons = apply_floors(d, FLOORS)
     assert reasons == ['app/auth "v2".py: changed line matches with_for_update (medium)']
+
+
+def test_carriage_return_cannot_hide_content():
+    d = "--- a/app/x.py\n+++ b/app/x.py\n@@ -0,0 +1,1 @@\n+x = 1\rALTER TABLE orders\n"
+    assert apply_floors(d, FLOORS)[0] == "medium"
+
+
+def test_name_containing_space_b_slash_is_recorded_whole():
+    from review.diff import parse_diff
+
+    d = "diff --git a/app/x b/y.py b/app/x b/y.py\nnew file mode 100644\n"
+    assert "app/x b/y.py" in parse_diff(d)[0]
+
+
+def test_undecodable_bytes_raise_the_floor():
+    # bad UTF-8 is replaced with U+FFFD on decode; text we could not read is never low
+    d = "--- a/app/x.py\n+++ b/app/x.py\n@@ -0,0 +1,1 @@\n+x = '�'\n"
+    level, reasons = apply_floors(d, FLOORS)
+    assert level == "medium"
+    assert any("not UTF-8" in r for r in reasons)
