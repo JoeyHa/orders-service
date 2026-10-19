@@ -86,14 +86,13 @@ def claude_hook(repo: Path, command: str) -> int:
 @pytest.mark.parametrize(
     "command",
     [
-        "git push -u origin feature",
         "gh pr create --fill",
-        "cd /repo && git push",
-        "ruff check .; git push origin main",
-        "  git  push",
+        "cd /repo && gh pr create --draft",
+        "ruff check .; gh pr create",
+        "  gh  pr  create",
     ],
 )
-def test_claude_hook_blocks_push_and_pr_without_review(repo, command):
+def test_claude_hook_blocks_pr_creation_without_review(repo, command):
     assert claude_hook(repo, command) == 2
 
 
@@ -101,15 +100,18 @@ def test_claude_hook_blocks_push_and_pr_without_review(repo, command):
     "command",
     [
         "pytest -q",
-        'echo "git push"',
+        # pushes are allowed: WIP backup and sharing; review is gated at PR creation
+        "git push -u origin feature",
+        "cd /repo && git push",
+        'echo "gh pr create"',
         "git log --grep='gh pr create'",
-        "cat > review.txt <<'EOF'\nfound `*\"git push\"*` on line 5\nEOF",
+        "cat > review.txt <<'EOF'\nfound `*\"gh pr create\"*` on line 5\nEOF",
     ],
 )
 def test_claude_hook_ignores_other_commands(repo, command):
     assert claude_hook(repo, command) == 0
 
 
-def test_claude_hook_allows_push_after_review(repo):
+def test_claude_hook_allows_pr_creation_after_review(repo):
     write_marker(repo, git(repo, "rev-parse", "HEAD"), "PASS")
-    assert claude_hook(repo, "git push") == 0
+    assert claude_hook(repo, "gh pr create") == 0
