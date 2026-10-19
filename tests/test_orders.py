@@ -95,3 +95,53 @@ async def test_concurrent_transitions_one_wins(client, auth, user_id, monkeypatc
         client.patch(url, json={"status": "cancelled"}, headers=auth),
     )
     assert sorted([r1.status_code, r2.status_code]) == [200, 409]
+
+
+async def test_refund_paid_order(client, auth, user_id):
+    order = await make_order(client, auth, user_id)
+    url = f"/orders/{order['id']}"
+    await client.patch(url, json={"status": "paid"}, headers=auth)
+    r = await client.patch(url, json={"status": "refunded"}, headers=auth)
+    assert r.status_code == 200
+    assert r.json()["status"] == "refunded"
+
+
+@pytest.mark.parametrize(
+    "path", [[], ["cancelled"], ["paid", "refunded"]], ids=["pending", "cancelled", "refunded"]
+)
+async def test_refund_only_from_paid(client, auth, user_id, path):
+    order = await make_order(client, auth, user_id)
+    url = f"/orders/{order['id']}"
+    for step in path:
+        assert (await client.patch(url, json={"status": step}, headers=auth)).status_code == 200
+    r = await client.patch(url, json={"status": "refunded"}, headers=auth)
+    assert r.status_code == 409
+
+
+@pytest.mark.parametrize("target", ["pending", "paid", "cancelled"])
+async def test_refunded_is_final(client, auth, user_id, target):
+    order = await make_order(client, auth, user_id)
+    url = f"/orders/{order['id']}"
+    for step in ["paid", "refunded"]:
+        await client.patch(url, json={"status": step}, headers=auth)
+    r = await client.patch(url, json={"status": target}, headers=auth)
+    assert r.status_code == 409
+
+
+async def test_concurrent_refunds_one_wins(client, auth, user_id, monkeypatch):
+    order = await make_order(client, auth, user_id)
+    url = f"/orders/{order['id']}"
+    await client.patch(url, json={"status": "paid"}, headers=auth)
+
+    original_commit = AsyncSession.commit
+
+    async def slow_commit(self):
+        await asyncio.sleep(0.2)
+        await original_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", slow_commit)
+    r1, r2 = await asyncio.gather(
+        client.patch(url, json={"status": "refunded"}, headers=auth),
+        client.patch(url, json={"status": "refunded"}, headers=auth),
+    )
+    assert sorted([r1.status_code, r2.status_code]) == [200, 409]

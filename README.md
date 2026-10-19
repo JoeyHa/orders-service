@@ -1,6 +1,6 @@
 # orders-service
 
-Small orders API: users, orders with a pending → paid/cancelled lifecycle, and a revenue report.
+Small orders API: users, orders with a pending → paid/cancelled, paid → refunded lifecycle, and a revenue report.
 
 ## Run locally
 
