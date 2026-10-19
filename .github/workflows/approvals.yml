@@ -1,0 +1,51 @@
+name: Approvals
+
+# Review pipeline L6: required human approvals by risk (low 0, medium 1, high 2).
+# shortcut: pull_request_review runs this file from the PR branch (there is no _target variant),
+# so a PR with write access could edit it; protect .github/ with a ruleset before relying on it.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  approvals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }} # policy + script from the base branch
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check approvals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # shellcheck disable=SC2016 # $owner etc. are GraphQL variables, not shell
+          gh api graphql \
+            -f owner="${GITHUB_REPOSITORY%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -F number="$PR_NUMBER" \
+            -f query='
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    author { login } headRefOid
+                    labels(first: 50) { nodes { name } }
+                    timelineItems(itemTypes: [LABELED_EVENT], last: 100) {
+                      nodes { ... on LabeledEvent { label { name } actor { login } } }
+                    }
+                    latestOpinionatedReviews(first: 50) {
+                      nodes { state author { login __typename } commit { oid } }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest' \
+          | python3 -m review.approvals
