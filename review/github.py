@@ -11,6 +11,7 @@ import subprocess
 from review.approvals import REQUIRED
 from review.diff import parse_diff
 from review.reviewer import ReviewResult, summarize
+from review.risk import Reason
 from review.rounds import Marker, RoundPlan, format_marker
 
 _SECRETS = [
@@ -21,6 +22,9 @@ _SECRETS = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 ]
 RISK_LABELS = ("risk:low", "risk:medium", "risk:high")
+MAX_CODE_CHARS = 120
+_ICON = {"low": "🟢", "medium": "🟡", "high": "🔴"}
+_HUMANS = {0: "none", 1: "1 human"}
 
 
 class SecretLeak(RuntimeError):
@@ -40,42 +44,98 @@ def commentable_lines(diff: str) -> dict[str, set[int]]:
     return lines
 
 
+def code_span(text: str) -> str:
+    """Code span safe inside a table cell; diff text is author-controlled and must not escape."""
+    text = text.replace("\r", "\\r").replace("\n", "\\n")  # a line break ends the span
+    if len(text) > MAX_CODE_CHARS:
+        text = text[:MAX_CODE_CHARS] + "…"
+    text = text.replace("|", "\\|")  # GitHub splits table cells on | even inside code
+    if "`" not in text:
+        return f"`{text}`"
+    fence = "`" * (max(len(run) for run in re.findall(r"`+", text)) + 1)
+    return f"{fence} {text} {fence}"
+
+
+def _cell(text: str) -> str:
+    return " ".join(text.split()).replace("|", "\\|")
+
+
+def _table(header: str, rows: list[str]) -> str:
+    cols = header.count("|") - 1
+    return "\n".join([header, "|" + "---|" * cols, *rows])
+
+
+def _reason_row(r: Reason) -> str:
+    where = code_span(r.where) if r.where else "whole PR"
+    rule = f"{r.kind} {code_span(r.rule)}" if r.rule else r.kind
+    proof = code_span(r.proof) if r.proof else ("file changed" if r.kind == "path" else "—")
+    return f"| {where} | {rule} | {_cell(r.why)} | {proof} |"
+
+
+def _risk_section(level: str, reasons: list[Reason]) -> list[str]:
+    head = f"### Why risk is {level}"
+    if not reasons:
+        if level == "low":
+            return [head, "No risk floor matched, and the risk models rated it low."]
+        return [head, "Raised by the code review itself (see findings)."]
+    header = "| Where | Rule | Why | Proof |"
+    top = [r for r in reasons if r.level == level] or reasons
+    rest = [r for r in reasons if r not in top]
+    parts = [head, _table(header, [_reason_row(r) for r in top])]
+    if rest:
+        n = len(rest)
+        levels = ", ".join(dict.fromkeys(r.level for r in rest))
+        summary = f"{n} more reason{'s' if n > 1 else ''} ({levels})"
+        rows = _table(header, [_reason_row(r) for r in rest])
+        parts.append(f"<details><summary>{summary}</summary>\n\n{rows}\n\n</details>")
+    return parts
+
+
 def build_review(
-    result: ReviewResult, *, head_sha: str, plan: RoundPlan, risk_reasons: list[str], diff: str
+    result: ReviewResult, *, head_sha: str, plan: RoundPlan, risk_reasons: list[Reason], diff: str
 ) -> dict:
     marker = Marker(head_sha, plan.round, "block" if result.blocking else "pass", result.risk_level)
     on_diff = commentable_lines(diff)
-    inline, elsewhere = [], []
-    for f in result.findings:
-        if f.line in on_diff.get(f.file, set()):
-            body = f"**{f.severity}**: {f.why}\n\n`{f.evidence}`"
-            inline.append({"path": f.file, "line": f.line, "side": "RIGHT", "body": body})
-        else:
-            elsewhere.append(f"- `{f.file}:{f.line}` **{f.severity}**: {f.why}")
+    inline = [
+        {"path": f.file, "line": f.line, "side": "RIGHT",
+         "body": f"**{f.severity}**: {f.why}\n\n{code_span(f.evidence)}"}
+        for f in result.findings if f.line in on_diff.get(f.file, set())
+    ]  # fmt: skip
+
+    if result.failed:
+        verdict = "❌ review failed"
+    else:
+        icon = "❌" if result.blocking else ("⚠️" if result.findings else "✅")
+        verdict = f"{icon} {summarize(result.findings, len(result.unverified)).rstrip('.')}"
+    needed = REQUIRED[f"risk:{result.risk_level}"]
+    humans = _HUMANS.get(needed, f"{needed} humans")
+    risk = f"{_ICON[result.risk_level]} {result.risk_level}"
 
     parts = [
         format_marker(marker),
-        f"### AI review: round {plan.round} ({plan.action}), {result.depth} depth",
-    ]
+        f"## AI review · round {plan.round} ({plan.action}) · {result.depth}",
+        _table("| Findings | Risk | Approvals needed | Cost |",
+               [f"| {_cell(verdict)} | {risk} | {humans} | ${result.cost_usd:.2f} |"]),
+        "> Risk is blast radius, not defects: it sets how many humans must approve, "
+        "even when there is nothing to fix.",
+    ]  # fmt: skip
     if result.failed:
-        parts.append(f"**Review failed, so this check blocks:** {result.error}")
+        parts.append(f"**The review failed, so this check blocks:** {_cell(result.error)}")
+    parts += _risk_section(result.risk_level, risk_reasons)
+    parts.append("### Findings")
+    if result.findings:
+        rows = [
+            f"| {f.severity} | {code_span(f'{f.file}:{f.line}')} | {_cell(f.why)} "
+            f"| {code_span(f.evidence)} |"
+            for f in result.findings
+        ]
+        parts.append(_table("| Severity | Where | Why | Evidence |", rows))
     else:
-        parts.append(f"**{summarize(result.findings, len(result.unverified))}**")
-    needed = REQUIRED[f"risk:{result.risk_level}"]
-    humans = {0: "no human approval", 1: "1 human approval"}.get(
-        needed, f"{needed} human approvals"
-    )
-    parts.append(
-        f"**Risk: {result.risk_level} → {humans} required.** Risk is blast radius, not defects."
-    )
-    parts += [f"- {r}" for r in risk_reasons]
+        parts.append("None.")
     if result.escalated:
         parts.append("A quick review found a blocking issue, so it was re-reviewed at deep depth.")
-    if elsewhere:
-        parts += ["Findings outside the changed lines:", *elsewhere]
     if result.dropped_nits:
         parts.append(f"{result.dropped_nits} more nits not shown (cap is 3).")
-    parts.append(f"Cost: ${result.cost_usd:.2f}")
 
     payload = {"commit_id": head_sha, "event": "COMMENT", "body": "\n\n".join(parts)}
     payload["comments"] = inline

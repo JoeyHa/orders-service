@@ -56,7 +56,7 @@ def bot_review(sha, round_, verdict):
 def fakes(io, findings=(), seen=None):
     async def risk(diff, floors, *, pr_text, root):
         io.env_during_agents["risk"] = os.environ.get("GH_TOKEN")
-        return RiskDecision(level="low", reasons=["floor"])
+        return RiskDecision(level="low")
 
     async def review(diff, **kw):
         io.env_during_agents["review"] = os.environ.get("GH_TOKEN")

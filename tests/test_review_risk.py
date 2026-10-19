@@ -73,14 +73,14 @@ def test_verifier_raise_with_evidence_stands():
     run = FakeRun(verdict("low"), verdict("high", ["drops a lock"], ["app/api/orders.py:66"]))
     d = decide(DOCS_DIFF, run)
     assert d.level == "high"
-    assert any("app/api/orders.py:66" in r for r in d.reasons)
+    assert any("app/api/orders.py:66" in r.proof for r in d.reasons)
 
 
 def test_verifier_raise_without_evidence_is_ignored_and_recorded():
     run = FakeRun(verdict("low"), verdict("high", ["feels risky"]))
     d = decide(DOCS_DIFF, run)
     assert d.level == "low"
-    assert any("without file:line evidence" in r for r in d.reasons)
+    assert any("without file:line evidence" in r.why for r in d.reasons)
 
 
 @pytest.mark.parametrize("failing_call", [0, 1])
@@ -89,7 +89,7 @@ def test_agent_failure_fails_closed_to_high(failing_call):
     verdicts[failing_call] = AgentError("boom")
     d = decide(DOCS_DIFF, FakeRun(*verdicts))
     assert d.level == "high"
-    assert any("boom" in r for r in d.reasons)
+    assert any("boom" in r.why for r in d.reasons)
 
 
 def test_pr_text_is_passed_as_untrusted_context():

@@ -3,11 +3,13 @@ import pytest
 from review.github import (
     SecretLeak,
     build_review,
+    code_span,
     commentable_lines,
     find_secrets,
     risk_labels,
 )
 from review.reviewer import ReviewResult
+from review.risk import Reason
 from review.rounds import RoundPlan, parse_markers
 from review.schema import Finding
 
@@ -32,7 +34,7 @@ def result(*findings, **kw):
 
 
 def build(r, **kw):
-    args = dict(head_sha="abc123", plan=RoundPlan("full", 1), risk_reasons=["r1"], diff=DIFF)
+    args = dict(head_sha="abc123", plan=RoundPlan("full", 1), risk_reasons=[], diff=DIFF)
     return build_review(r, **(args | kw))
 
 
@@ -136,10 +138,58 @@ def test_label_removal_404_is_fine(monkeypatch):
     github.set_labels("o/r", 1, ["risk:high"])
 
 
+HIGH = Reason("high", "CLAUDE.md", "path", "CLAUDE.md", "steers the reviewer")
+MEDIUM = Reason("medium", "app/x.py:3", "line", "text\\(", "raw SQL", "+text('a | b')")
+
+
 @pytest.mark.parametrize(
-    "level,needed",
-    [("low", "no human approval"), ("medium", "1 human approval"), ("high", "2 human approvals")],
+    "level,needed", [("low", "none"), ("medium", "1 human"), ("high", "2 humans")]
 )
-def test_risk_line_says_what_the_level_means(level, needed):
-    body = build(ReviewResult(depth="standard", risk_level=level, findings=[]))["body"]
-    assert f"**Risk: {level} → {needed} required.** Risk is blast radius, not defects." in body
+def test_summary_table_shows_findings_risk_approvals_and_cost(level, needed):
+    body = build(ReviewResult(depth="deep", risk_level=level, findings=[], cost_usd=0.26))["body"]
+    assert "## AI review · round 1 (full) · deep" in body
+    assert "| Findings | Risk | Approvals needed | Cost |" in body
+    assert f"| ✅ 0 findings — nothing to fix | {level} | {needed} | $0.26 |" in body.replace(
+        "🔴 ", ""
+    ).replace("🟡 ", "").replace("🟢 ", "")
+    assert "Risk is blast radius, not defects" in body
+
+
+def test_deciding_reasons_in_a_table_the_rest_collapsed():
+    r = ReviewResult(depth="deep", risk_level="high", findings=[])
+    body = build(r, risk_reasons=[HIGH, MEDIUM])["body"]
+    top, rest = body.split("<details>")
+    assert "### Why risk is high" in top
+    assert "| `CLAUDE.md` | path `CLAUDE.md` | steers the reviewer | file changed |" in top
+    assert "<summary>1 more reason (medium)</summary>" in rest
+    assert "| `app/x.py:3` | line `text\\(` | raw SQL | `+text('a \\| b')` |" in rest
+
+
+def test_no_reasons_says_nothing_matched():
+    body = build(ReviewResult(depth="quick", risk_level="low", findings=[]))["body"]
+    assert "No risk floor matched, and the risk models rated it low." in body
+
+
+def test_findings_table_lists_every_finding():
+    body = build(result(finding(11, "blocking"), finding(99, "pre-existing")))["body"]
+    assert "| Severity | Where | Why | Evidence |" in body
+    assert "| blocking | `app.py:11` | because | `x` |" in body
+    assert "| pre-existing | `app.py:99` | because | `x` |" in body
+
+
+def test_blocking_findings_mark_the_summary():
+    body = build(result(finding(11, "blocking")))["body"]
+    assert "| ❌ 1 findings (1 blocking) |" in body
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("+q = `x`", "`` +q = `x` ``"),
+        (".github/x\ny.yml", "`.github/x\\ny.yml`"),
+        ("a|b", "`a\\|b`"),
+        ("x" * 500, "`" + "x" * 120 + "…`"),
+    ],
+)
+def test_code_span_cannot_be_broken_by_diff_text(text, expected):
+    assert code_span(text) == expected
