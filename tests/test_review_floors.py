@@ -93,3 +93,26 @@ def test_empty_or_mode_only_change_hits_path_floor():
         "new file mode 100644\nindex 0000000..e69de29\n"
     )
     assert apply_floors(d, FLOORS)[0] == "high"
+
+
+def test_unicode_line_separator_cannot_hide_content():
+    # str.splitlines() also splits on U+2028; a diff line ends only at "\n"
+    d = "--- a/app/x.py\n+++ b/app/x.py\n@@ -0,0 +1,1 @@\n+x = 1 ALTER TABLE orders\n"
+    assert apply_floors(d, FLOORS)[0] == "medium"
+
+
+def test_git_quoted_non_ascii_path_still_hits_path_floor():
+    # git C-quotes unusual names: "a/.github/workflows/\303\274.yml"
+    q = '"a/.github/workflows/\\303\\274.yml" "b/.github/workflows/\\303\\274.yml"'
+    d = f"diff --git {q}\nnew file mode 100644\n"
+    assert apply_floors(d, FLOORS)[0] == "high"
+
+
+def test_git_quoted_path_in_file_headers():
+    d = (
+        'diff --git "a/app/auth \\"v2\\".py" "b/app/auth \\"v2\\".py"\n'
+        '--- "a/app/auth \\"v2\\".py"\n+++ "b/app/auth \\"v2\\".py"\n'
+        "@@ -0,0 +1,1 @@\n+stmt.with_for_update()\n"
+    )
+    _, reasons = apply_floors(d, FLOORS)
+    assert reasons == ['app/auth "v2".py: changed line matches with_for_update (medium)']

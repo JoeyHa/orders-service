@@ -5,11 +5,13 @@ Inside a hunk, every line is content: an added line whose text starts with "++ "
 say exactly how many lines belong to the hunk.
 """
 
+import codecs
 import re
 from dataclasses import dataclass
 
 _HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-_GIT_HEADER = re.compile(r"^diff --git a/(.+) b/(.+)$")
+_QUOTED = r'"(?:[^"\\]|\\.)*"'
+_GIT_HEADER = re.compile(rf"^diff --git ({_QUOTED}|a/.+?) ({_QUOTED}|b/.+)$")
 
 
 @dataclass(frozen=True)
@@ -20,7 +22,15 @@ class DiffLine:
     text: str
 
 
+def _unquote(raw: str) -> str:
+    """Git C-quotes unusual names ("a/\\303\\274.yml"); undo it so path rules still match."""
+    if len(raw) >= 2 and raw[0] == raw[-1] == '"':
+        return codecs.escape_decode(raw[1:-1].encode())[0].decode("utf-8", "replace")
+    return raw
+
+
 def _name(raw: str) -> str | None:
+    raw = _unquote(raw)
     if raw == "/dev/null":
         return None
     return raw[2:] if raw[:2] in ("a/", "b/") else raw
@@ -32,7 +42,7 @@ def parse_diff(diff: str) -> tuple[set[str], list[DiffLine]]:
     lines: list[DiffLine] = []
     old = new = None
     old_left = new_left = n = 0
-    for raw in diff.splitlines():
+    for raw in diff.split("\n"):  # not splitlines(): U+2028 etc. are content, not line ends
         if (old_left > 0 or new_left > 0) and raw[:1] not in ("+", "-", " ", "\\"):
             old_left = new_left = 0  # malformed counts: hunk lines never start otherwise
         if old_left > 0 or new_left > 0:
@@ -51,9 +61,9 @@ def parse_diff(diff: str) -> tuple[set[str], list[DiffLine]]:
             old = new = None
             # renames, empty files and mode changes have no ---/+++ lines; git always prints this
             if match := _GIT_HEADER.match(raw):
-                paths.update(match.groups())
+                paths.update(p for p in map(_name, match.groups()) if p)
         elif raw.startswith(("rename from ", "rename to ")):
-            paths.add(raw.split(" ", 2)[2])
+            paths.add(_unquote(raw.split(" ", 2)[2]))
         elif raw.startswith("--- "):
             old = _name(raw[4:])
         elif raw.startswith("+++ "):
