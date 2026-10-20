@@ -46,6 +46,11 @@ class ReviewResult:
     def blocking(self) -> bool:
         return self.failed or any(f.severity == "blocking" for f in self.findings)
 
+    @property
+    def needs_human(self) -> bool:
+        # an unverified finding may be real (a misquote, not a hallucination): a person decides
+        return humans_for_findings(self.findings + self.unverified) > 0
+
 
 def verify_findings(findings: list[Finding], root: Path) -> tuple[list[Finding], list[Finding]]:
     """Keep findings whose quoted evidence really is in the file near the cited line."""

@@ -83,3 +83,22 @@ def test_two_risk_labels_count_as_the_higher_one():
     data = pr(labels=["risk:low", "risk:high"], reviews=[approval("alice")])
     code, msg = decide(data)
     assert code == 1 and "risk:high" in msg
+
+
+def test_fetch_pr_queries_the_pull_request_through_gh(monkeypatch):
+    import json
+    import subprocess as sp
+
+    from review import approvals
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        body = {"data": {"repository": {"pullRequest": {"headRefOid": "abc"}}}}
+        return sp.CompletedProcess(cmd, 0, json.dumps(body), "")
+
+    monkeypatch.setattr(approvals.subprocess, "run", fake_run)
+    assert approvals.fetch_pr("JoeyHa/orders-service", 7) == {"headRefOid": "abc"}
+    assert seen["cmd"][:3] == ["gh", "api", "graphql"]
+    assert "owner=JoeyHa" in seen["cmd"] and "number=7" in seen["cmd"]

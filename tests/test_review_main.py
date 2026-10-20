@@ -197,3 +197,18 @@ def test_human_requirement_from_an_earlier_round_stays_in_the_report():
     body = io.posted[0]["body"]
     assert "| Findings | earlier round: blocking or important | 1 |" in body
     assert "human=1 -->" in body and io.labels == ["risk:low", "needs-human"]
+
+
+def test_unverified_important_finding_is_logged_and_needs_a_human(capsys):
+    io = FakeIo()
+    risk, _ = fakes(io)
+    dropped = Finding(file="x.py", line=9, severity="important", evidence="::error::x", why="w")
+
+    async def review(diff, **kw):
+        return ReviewResult(depth="quick", risk_level="low", unverified=[dropped])
+
+    asyncio.run(run_review(io, head_sha="head", policy=POLICY, decide=risk, review=review))
+    assert io.labels == ["risk:low", "needs-human"]
+    logged = [line for line in capsys.readouterr().out.splitlines() if "x.py" in line]
+    assert logged and all(not line.startswith("::") for line in logged)
+    assert '"severity": "important"' in logged[0]
