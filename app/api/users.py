@@ -28,6 +28,7 @@ class UserOut(BaseModel):
 
 @router.post("", status_code=201, response_model=UserOut, dependencies=[Depends(require_api_key)])
 async def create_user(body: UserIn, session: SessionDep) -> User:
+    """Create a user. The email is stored lowercased; an email already in use returns 409."""
     user = User(email=body.email.lower(), name=body.name)
     session.add(user)
     try:
@@ -41,6 +42,7 @@ async def create_user(body: UserIn, session: SessionDep) -> User:
 
 @router.get("/{user_id}", response_model=UserOut)
 async def get_user(user_id: Annotated[int, Path(ge=1, le=INT4_MAX)], session: SessionDep) -> User:
+    """Fetch one user by id; 404 if there is none, 422 if the id is outside 1..2**31-1."""
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")

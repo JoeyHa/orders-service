@@ -35,3 +35,9 @@ async def test_get_missing_user(client):
 async def test_create_user_requires_key(client):
     r = await client.post("/users", json={"email": "a@x.com", "name": "A"})
     assert r.status_code == 401
+
+
+async def test_user_routes_are_described_in_the_api_docs(client):
+    paths = (await client.get("/openapi.json")).json()["paths"]
+    assert "409" in paths["/users"]["post"]["description"]
+    assert "404" in paths["/users/{user_id}"]["get"]["description"]
