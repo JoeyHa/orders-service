@@ -10,7 +10,7 @@ import subprocess
 
 from review.approvals import REQUIRED
 from review.diff import parse_diff
-from review.reviewer import HUMAN_SEVERITIES, ReviewResult, humans_for_findings, summarize
+from review.reviewer import HUMAN_SEVERITIES, ReviewResult, summarize
 from review.risk import Reason
 from review.rounds import Marker, RoundPlan, format_marker
 from review.schema import SEVERITY_MEANING
@@ -97,6 +97,11 @@ def _risk_section(level: str, reasons: list[Reason], *, escalated: bool) -> list
     return parts
 
 
+def _serious(findings: list, suffix: str = "") -> list[str]:
+    counts = [(s, sum(f.severity == s for f in findings)) for s in HUMAN_SEVERITIES]
+    return [f"{n} {s}{suffix}" for s, n in counts if n]
+
+
 def build_review(
     result: ReviewResult,
     *,
@@ -107,7 +112,7 @@ def build_review(
     human_before: bool = False,  # an earlier round already required a human
 ) -> dict:
     verdict = "block" if result.blocking else "pass"
-    human = human_before or humans_for_findings(result.findings) > 0
+    human = human_before or result.needs_human
     marker = Marker(head_sha, plan.round, verdict, result.risk_level, human)
     on_diff = commentable_lines(diff)
     inline = [
@@ -133,16 +138,11 @@ def build_review(
         _table("| Findings | Risk | Approvals needed | Cost |",
                [f"| {_cell(verdict)} | {risk} | {humans} | ${result.cost_usd:.2f} |"]),
     ]  # fmt: skip
-    serious = sum(f.severity in HUMAN_SEVERITIES for f in result.findings)
-    found = (
-        " · ".join(
-            f"{n} {s}"
-            for s in HUMAN_SEVERITIES
-            if (n := sum(f.severity == s for f in result.findings))
+    found = " · ".join(_serious(result.findings) + _serious(result.unverified, " (unverified)"))
+    if not found:
+        found = (
+            "earlier round: blocking or important" if human_before else "0 blocking or important"
         )
-        if serious
-        else ("earlier round: blocking or important" if human_before else "0 blocking or important")
-    )
     parts += [
         "### Who must review",
         _table("| Ranking | Result | Humans |", [
@@ -170,6 +170,21 @@ def build_review(
         parts.append("None.")
     if result.dropped_nits:
         parts.append(f"{result.dropped_nits} more nits not shown (cap is 3).")
+    if result.unverified:
+        rows = _table("| Severity | Where | Why | Evidence (as quoted) |", [
+            f"| {f.severity} | {code_span(f'{f.file}:{f.line}')} | {_cell(f.why)} "
+            f"| {code_span(f.evidence)} |"
+            for f in result.unverified
+        ])  # fmt: skip
+        note = (
+            "The quoted evidence was not found near the cited line, so these may be invented. "
+            "A blocking or important one still needs a human to look."
+        )
+        n = len(result.unverified)
+        parts.append(
+            f"<details><summary>{n} not verified, not counted</summary>\n\n{note}\n\n{rows}"
+            "\n\n</details>"
+        )
 
     payload = {"commit_id": head_sha, "event": "COMMENT", "body": "\n\n".join(parts)}
     payload["comments"] = inline

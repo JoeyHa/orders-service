@@ -28,24 +28,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          # shellcheck disable=SC2016 # $owner etc. are GraphQL variables, not shell
-          gh api graphql \
-            -f owner="${GITHUB_REPOSITORY%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -F number="$PR_NUMBER" \
-            -f query='
-              query($owner: String!, $repo: String!, $number: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  pullRequest(number: $number) {
-                    author { login } headRefOid
-                    labels(first: 50) { nodes { name } }
-                    timelineItems(itemTypes: [LABELED_EVENT], last: 100) {
-                      nodes { ... on LabeledEvent { label { name } actor { login } } }
-                    }
-                    latestOpinionatedReviews(first: 50) {
-                      nodes { state author { login __typename } commit { oid } }
-                    }
-                  }
-                }
-              }' \
-            --jq '.data.repository.pullRequest' \
-          | python3 -m review.approvals
+        run: python3 -m review.approvals

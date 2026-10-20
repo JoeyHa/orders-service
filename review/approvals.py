@@ -1,13 +1,40 @@
 """L6: required human approvals by risk. Bots never count; a maintainer's break-glass is logged.
 
-Reads the GraphQL `pullRequest` object on stdin (see .github/workflows/approvals.yml).
+Run by .github/workflows/approvals.yml on review events, and by ai-review.yml after it sets the
+risk labels (labels added with GITHUB_TOKEN do not trigger workflows).
 """
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 REQUIRED = {"risk:low": 0, "risk:medium": 1, "risk:high": 2}
+
+_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      author { login } headRefOid
+      labels(first: 50) { nodes { name } }
+      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {
+        nodes { ... on LabeledEvent { label { name } actor { login } } }
+      }
+      latestOpinionatedReviews(first: 50) {
+        nodes { state author { login __typename } commit { oid } }
+      }
+    }
+  }
+}"""
+
+
+def fetch_pr(repo: str, number: int) -> dict:
+    owner, name = repo.split("/")
+    cmd = ["gh", "api", "graphql", "-f", f"owner={owner}", "-f", f"repo={name}",
+           "-F", f"number={number}", "-f", f"query={_QUERY}"]  # fmt: skip
+    out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+    return json.loads(out)["data"]["repository"]["pullRequest"]
 
 
 def _applied_by(pr: dict, label: str) -> str | None:
@@ -46,6 +73,7 @@ if __name__ == "__main__":
     path = Path(".github/maintainers.txt")
     lines = path.read_text().splitlines() if path.is_file() else []
     maintainers = frozenset(s.strip() for s in lines if s.strip() and not s.startswith("#"))
-    code, message = decide_approvals(json.load(sys.stdin), maintainers=maintainers)
+    pr = fetch_pr(os.environ["GITHUB_REPOSITORY"], int(os.environ["PR_NUMBER"]))
+    code, message = decide_approvals(pr, maintainers=maintainers)
     print(message)
     sys.exit(code)

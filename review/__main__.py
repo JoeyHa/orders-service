@@ -10,7 +10,7 @@ from pathlib import Path
 
 from review.github import SecretLeak, build_review, post_review, risk_labels, set_labels
 from review.policy import load_floors
-from review.reviewer import humans_for_findings, review_pr
+from review.reviewer import review_pr
 from review.risk import decide_risk
 from review.rounds import RoundPlan, parse_markers, plan_round
 from review.schema import max_level
@@ -60,6 +60,9 @@ async def run_review(io, *, head_sha: str, policy: dict, decide=decide_risk, rev
     result.risk_level = max_level(risk.level, result.risk_level)
     result.cost_usd += risk.cost_usd
 
+    for f in result.unverified:  # one JSON line: model text cannot start a workflow command
+        print("unverified finding:", json.dumps(f.model_dump()))
+
     try:
         payload = build_review(
             result, head_sha=head_sha, plan=plan, risk_reasons=risk.reasons,
@@ -69,7 +72,7 @@ async def run_review(io, *, head_sha: str, policy: dict, decide=decide_risk, rev
         print(f"::error::{e}")
         return 1
     io.post(payload)
-    needs_human = human_before or humans_for_findings(result.findings) > 0  # sticky
+    needs_human = human_before or result.needs_human  # sticky
     io.set_labels(risk_labels(result.risk_level, needs_human=needs_human))
     return 1 if result.blocking else 0
 

@@ -267,3 +267,17 @@ def test_gh_failure_reports_github_s_error(monkeypatch):
     monkeypatch.setattr(github.subprocess, "run", fake_run)
     with pytest.raises(RuntimeError, match="Line could not be resolved"):
         github.post_review("o/r", 1, {"body": "x"})
+
+
+def test_unverified_findings_are_listed_and_a_serious_one_needs_a_human():
+    r = ReviewResult(depth="quick", risk_level="low", findings=[], unverified=[finding(44)])
+    body = build(r)["body"]
+    assert "| Findings | 1 important (unverified) | 1 |" in body
+    assert "human=1 -->" in body
+    unverified = body.split("<summary>1 not verified, not counted</summary>")[1]
+    assert "| important | `app.py:44` | because | `x` |" in unverified
+
+
+def test_unverified_nit_alone_needs_no_human():
+    r = ReviewResult(depth="quick", risk_level="low", findings=[], unverified=[finding(44, "nit")])
+    assert "human=0 -->" in build(r)["body"]

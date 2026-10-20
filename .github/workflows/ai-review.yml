@@ -50,3 +50,20 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_DIR: pr
         run: python -m review
+
+  approvals:
+    # ai-review sets the risk labels with GITHUB_TOKEN, which never triggers approvals.yml;
+    # re-check here so the required "approvals" check reflects the new label
+    needs: ai-review
+    if: always() && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # main: policy + script
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check approvals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 -m review.approvals
